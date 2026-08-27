@@ -116,7 +116,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Entrada al Gimnasio'),
+        title: const Text('<---> Powerlifting AI Coach'),
         centerTitle: true,
       ),
       body: Padding(
@@ -125,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.lock_person, size: 80, color: Colors.blueAccent),
+            const Icon(Icons.lock_person, size: 80, color: Color.fromARGB(255, 104, 4, 4)),
             const SizedBox(height: 60),
             TextField(
               controller: _emailController,
