@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'complete_profile.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -23,55 +24,77 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // Función para Iniciar Sesión
   Future<void> _signIn() async {
-    setState(() => _isLoading = true);
-    try {
-      await _supabase.auth.signInWithPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('¡Sesión iniciada con éxito!')),
-        );
+  setState(() => _isLoading = true);
+  try {
+    final response = await _supabase.auth.signInWithPassword(
+      email: _emailController.text.trim(),
+      password: _passwordController.text.trim(),
+    );
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const CompleteProfile(),
-          ),
-        );
-        // Aquí luego navegaremos a la pantalla principal (Home)
-      }
-    } on AuthException catch (e) {
-      _showError(e.message);
-    } catch (e) {
-      _showError('Error inesperado: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    if (mounted && response.user != null) {
+      //verifica si el perfil del user ya esta completo
+      final profile = await _supabase
+          .from('profiles')
+          .select('full_name, role')
+          .eq('id', response.user!.id)
+          .maybeSingle();
+
+      final bool tienePerfilCompleto = profile != null &&
+          profile['full_name'] != null &&
+          profile['role'] != null;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('¡Sesión iniciada con éxito!')),
+      );
+        //si ya existe se va a home
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => tienePerfilCompleto
+              ? const HomeScreen()
+              : const CompleteProfile(),
+        ),
+      );
     }
+  } on AuthException catch (e) {
+    _showError(e.message);
+  } catch (e) {
+    _showError('Error inesperado: $e');
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
+}
 
   // Función para Registrarse (Crear cuenta nueva)
   Future<void> _signUp() async {
-    setState(() => _isLoading = true);
-    try {
-      await _supabase.auth.signUp(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Registro exitoso. Revisa tu correo o inicia sesión.')),
-        );
-      }
-    } on AuthException catch (e) {
-      _showError(e.message);
-    } catch (e) {
-      _showError('Error inesperado: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+  setState(() => _isLoading = true);
+  try {
+    final response = await _supabase.auth.signUp(
+      email: _emailController.text.trim(),
+      password: _passwordController.text.trim(),
+    );
+
+    // Si la lista de identidades está vacía, el usuario ya existe en Supabase
+    if (response.user != null &&
+        response.user!.identities != null &&
+        response.user!.identities!.isEmpty) {
+      _showError('Este correo electrónico ya está registrado. Intenta iniciar sesión.');
+      return;
     }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Registro exitoso. Inicia sesión para continuar.')),
+      );
+    }
+  } on AuthException catch (e) {
+    _showError(e.message);
+  } catch (e) {
+    _showError('Error inesperado: $e');
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
+}
 
   // Función auxiliar para mostrar errores
   void _showError(String message) {

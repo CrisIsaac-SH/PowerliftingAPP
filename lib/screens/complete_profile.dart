@@ -19,58 +19,74 @@ class _CompleteProfileState extends State<CompleteProfile> {
   bool _isLoading = false; // Para mostrar un indicador de carga
 
   Future<void> _guardarDatos() async {
-    // Validar que los campos no estén vacíos
-    if (_nombreController.text.isEmpty || 
-        _edadController.text.isEmpty || 
-        _pesoController.text.isEmpty || 
-        _rolSeleccionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, llena todos los campos')),
-      );
-      return;
-    }
+  final nombre = _nombreController.text.trim();
+  final edadTexto = _edadController.text.trim();
+  final pesoTexto = _pesoController.text.trim();
 
-    setState(() {
-      _isLoading = true;
-    });
+  //validacion si hay campos vacios
+  if (nombre.isEmpty || edadTexto.isEmpty || pesoTexto.isEmpty || _rolSeleccionado == null) {
+    _mostrarError('Por favor, llena todos los campos');
+    return;
+  }
 
-    try {
-      // 1. Obtener el ID del usuario que tiene la sesión iniciada
-      final user = Supabase.instance.client.auth.currentUser;
-      
-      if (user != null) {
-        // 2. Hacer el UPDATE en la tabla profiles
-        await Supabase.instance.client.from('profiles').update({
-          'full_name': _nombreController.text.trim(),
-          'age': int.parse(_edadController.text.trim()), // Convertimos a entero
-          'weight': double.parse(_pesoController.text.trim()), // Convertimos a decimal (float8)
-          'role': _rolSeleccionado,
-        }).eq('id', user.id); // Aseguramos que solo actualice la fila de ESTE usuario
+  //validacion que el nombre no tenga caracateres raros
+  final regExpNombre = RegExp(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$');
+  if (!regExpNombre.hasMatch(nombre)) {
+    _mostrarError('El nombre solo debe contener letras y espacios');
+    return;
+  }
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('¡Perfil guardado con éxito!')),
-          );
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-          );
-          // AQUÍ LUEGO AGREGAREMOS LA NAVEGACIÓN A LA PANTALLA PRINCIPAL (HOME)
-        }
-      }
-    } catch (e) {
+  //validacion de rango de edad
+  final edad = int.tryParse(edadTexto);
+  if (edad == null || edad < 12 || edad > 100) {
+    _mostrarError('Ingresa una edad válida (entre 12 y 100 años)');
+    return;
+  }
+
+  //validad ranfo de peso
+  final peso = double.tryParse(pesoTexto);
+  if (peso == null || peso < 30 || peso > 300) {
+    _mostrarError('Ingresa un peso válido (entre 30 y 300 kg)');
+    return;
+  }
+
+  setState(() => _isLoading = true);
+  // Guardamos los datos en Supabase
+  try {
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (user != null) {
+      await Supabase.instance.client.from('profiles').update({
+        'full_name': nombre,
+        'age': edad,
+        'weight': peso,
+        'role': _rolSeleccionado,
+      }).eq('id', user.id);
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al guardar: $e')),
+          const SnackBar(content: Text('¡Perfil guardado con éxito!')),
+        );
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
+  } catch (e) {
+    if (mounted) {
+      _mostrarError('Error al guardar: $e');
+    }
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
+}
+
+// Función auxiliar para mostrar mensajes de error
+void _mostrarError(String mensaje) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(mensaje), backgroundColor: Colors.redAccent),
+  );
+}
 
   @override
   void dispose() {

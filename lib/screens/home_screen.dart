@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -55,13 +56,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pantalla Principal'),
-        // Opcional: Un botón para cerrar sesión y volver a probar
+        //parte que permite el logout y regresa al login
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              await Supabase.instance.client.auth.signOut();
-              // Aquí deberías navegar de vuelta a tu pantalla de Login
+            await Supabase.instance.client.auth.signOut();
+            if (context.mounted) {
+            // Destruye todo el historial de navegación y regresa al Login
+              Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (context) => const LoginScreen()),
+              (route) => false,
+              );
+            }
             },
           ),
         ],
