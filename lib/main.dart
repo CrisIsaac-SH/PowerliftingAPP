@@ -1,48 +1,49 @@
-import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/material.dart';//para lo visual 
+import 'package:supabase_flutter/supabase_flutter.dart';//paara conectar con supabase
+import 'package:google_fonts/google_fonts.dart';//tipografia
 
 //importaciones de pantallas
 import 'screens/login_screen.dart';
 
 void main() async {
-  // 1. Asegurarnos de que Flutter esté inicializado antes de llamar a servicios externos
+//prioridad de inicializar Supabase, aseguramos que Flutter esté listo
   WidgetsFlutterBinding.ensureInitialized();
-
-  // 2. Inicializar Supabase (Reemplazaremos estas claves pronto)
-   
+//iniciamos supabase
   await Supabase.initialize(
     url: 'https://fwtgsaujqkwhqwgzpebq.supabase.co',
     anonKey: 'sb_publishable_5VQPkVnMYK5of7DibF-RmQ_dog8zKB3',
   );
   
 
-  // 3. Arrancar la aplicación
+  // 3. iniciamos la app
   runApp(const PowerliftingApp());
 }
+
 
 class PowerliftingApp extends StatelessWidget {
   const PowerliftingApp({super.key});
 
+//raiz de la app
   @override
   Widget build(BuildContext context) {
+    //tema de la app y sus caracteristicas visuales
     return MaterialApp(
       title: 'Powerlifting AI',
-      debugShowCheckedModeBanner: false, // Quita la etiqueta roja de "DEBUG"
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // Configuramos un tema oscuro, ideal para apps de gimnasio
         brightness: Brightness.dark,
         primarySwatch: Colors.blue,
         textTheme: GoogleFonts.robotoTextTheme(
           Theme.of(context).textTheme.apply(bodyColor: Colors.white),
         ),
       ),
+      //pantalla inicial de la app que redirige al login
       home: const LoginScreen(),
     );
   }
 }
 
-// Esta es una pantalla temporal de inicio
+//parte inneeserais, sirvio para partes incialse
 class InitialScreen extends StatelessWidget {
   const InitialScreen({super.key});
 

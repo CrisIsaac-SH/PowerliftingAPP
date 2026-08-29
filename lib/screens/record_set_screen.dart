@@ -1,67 +1,51 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/one_rep_max.dart';
+//importaciones de utilidades y pantallas
 
 class RecordSetScreen extends StatefulWidget {
-  final String exerciseName;
-  const RecordSetScreen({super.key, required this.exerciseName});
+  final String ejercicio; // Ej: 'Squat', 'Bench Press', 'Deadlift'
+  //enfocado solo a los 3 ejercicios princiaples del powerlifitng
+
+//constructor de la pantallas de screen
+  const RecordSetScreen({super.key, required this.ejercicio});
 
   @override
   State<RecordSetScreen> createState() => _RecordSetScreenState();
 }
 
+//estado de la pantalla de registro de series
 class _RecordSetScreenState extends State<RecordSetScreen> {
-  final _weightController = TextEditingController();
+  //controladores de caracteristixas de las varieables
+  final _pesoController = TextEditingController();
   final _repsController = TextEditingController();
-  final _rpeController = TextEditingController();
+  final _rpeController = TextEditingController(); 
   
+  double _1rmEstimado = 0.0;
   bool _isLoading = false;
-  bool _isLoadingHistory = true;
-  List<dynamic> _historialSets = [];
 
-  @override
-  void initState() {
-    super.initState();
-    _cargarHistorial(); // Carga el historial al abrir la pantalla
+//funcion que maneja el rm 
+  void _actualizar1RM() {
+    //el peso y reps pasan arriba por los contoles
+    final peso = double.tryParse(_pesoController.text) ?? 0.0;
+    final reps = int.tryParse(_repsController.text) ?? 0;
+    //setea  el estado con el calculo de la rm en el calculo de one repmax
+    setState(() {
+      _1rmEstimado = PowerliftingUtils.calcular1RM(peso, reps);
+    });
   }
 
-  // --- NUEVA FUNCIÓN: Leer historial específico ---
-  Future<void> _cargarHistorial() async {
-    setState(() => _isLoadingHistory = true);
-    try {
-      final supabase = Supabase.instance.client;
-      final user = supabase.auth.currentUser;
-      
-      if (user == null) return;
-
-      // Hacemos un INNER JOIN con workouts para filtrar por el usuario actual
-      final data = await supabase
-          .from('sets')
-          .select('weight, reps, rpe, created_at, workouts!inner(user_id, date)')
-          .eq('exercise_name', widget.exerciseName)
-          .eq('workouts.user_id', user.id)
-          .order('created_at', ascending: false) // Los más recientes primero
-          .limit(20); // Traemos los últimos 20 para no saturar
-
-      if (mounted) {
-        setState(() {
-          _historialSets = data;
-          _isLoadingHistory = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error al cargar historial: $e');
-      if (mounted) setState(() => _isLoadingHistory = false);
-    }
-  }
-
+//funcion que guarda el set del worjout
   Future<void> _guardarSet() async {
-    final peso = double.tryParse(_weightController.text);
-    final repeticiones = int.tryParse(_repsController.text);
-    final rpe = double.tryParse(_rpeController.text);
+    //variables quehacen en cualidades 
+    final peso = double.tryParse(_pesoController.text);
+    final reps = int.tryParse(_repsController.text);
+    final rpe = double.tryParse(_rpeController.text); 
 
-    if (peso == null || repeticiones == null || rpe == null) {
+    //si los campos estan nulos tira alertas que tiene que llenar
+    if (peso == null || reps == null || peso <= 0 || reps <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, ingresa números válidos')),
+        const SnackBar(content: Text('Ingresa valores de peso y reps válidos'), backgroundColor: Colors.redAccent),
       );
       return;
     }
@@ -69,58 +53,60 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
     setState(() => _isLoading = true);
 
     try {
+      //intenta conextar a la db 
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
       
-      if (user == null) throw Exception('Usuario no autenticado');
+      //si el user no es null guarda
+      if (user != null) {
+        final hoy = DateTime.now().toIso8601String().split('T')[0]; 
+        String workoutId;
 
-      final hoy = DateTime.now().toIso8601String().split('T')[0];
-
-      final workoutExistente = await supabase
-          .from('workouts')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('date', hoy)
-          .maybeSingle();
-
-      String workoutId;
-
-      if (workoutExistente == null) {
-        final nuevoWorkout = await supabase
+        final workoutExistente = await supabase
+        //conecta a la base de datos todo lo esencial
             .from('workouts')
-            .insert({'user_id': user.id, 'date': hoy})
             .select('id')
-            .single();
-        workoutId = nuevoWorkout['id'];
-      } else {
-        workoutId = workoutExistente['id'];
-      }
+            .eq('user_id', user.id)
+            .eq('date', hoy)
+            .maybeSingle();
+        //si no hay workout lo crea
+        if (workoutExistente == null) {
+          final nuevoWorkout = await supabase
+              .from('workouts')
+              .insert({
+                'user_id': user.id,
+                'date': hoy,
+              })
+              .select('id')
+              .single();
+          workoutId = nuevoWorkout['id'];
+        } else {
+          workoutId = workoutExistente['id'];
+        }
 
-      await supabase.from('sets').insert({
-        'workout_id': workoutId,
-        'exercise_name': widget.exerciseName,
-        'weight': peso,
-        'reps': repeticiones,
-        'rpe': rpe,
-      });
+        await supabase.from('sets').insert({
+          'workout_id': workoutId,
+          'exercise_name': widget.ejercicio,
+          'weight': peso,
+          'reps': reps,
+          if (rpe != null) 'rpe': rpe, 
+        });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('¡Serie guardada con éxito!'), backgroundColor: Color.fromARGB(255, 40, 212, 46)),
-        );
-        
-        // Limpiamos los campos para que pueda registrar la siguiente serie rápido
-        _weightController.clear();
-        _repsController.clear();
-        _rpeController.clear();
-        
-        // Recargamos el historial para que aparezca la nueva serie al instante
-        _cargarHistorial();
+        //registro con exito
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('¡Serie registrada con éxito!'), backgroundColor: Colors.green),
+          );
+          _pesoController.clear();
+          _repsController.clear();
+          _rpeController.clear();
+          setState(() => _1rmEstimado = 0.0);
+        }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al guardar: $e', style: const TextStyle(color: Colors.white))),
+          SnackBar(content: Text('Error al guardar: $e'), backgroundColor: Colors.redAccent),
         );
       }
     } finally {
@@ -128,123 +114,113 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _weightController.dispose();
-    _repsController.dispose();
-    _rpeController.dispose();
-    super.dispose();
-  }
-
+  //
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF333333),
       appBar: AppBar(
-        title: Text(widget.exerciseName),
+        title: Text('Registrar ${widget.ejercicio}'),
         backgroundColor: const Color(0xFF180A0A),
+        foregroundColor: Colors.white,
+        elevation: 0,
       ),
-      body: Column(
-        children: [
-          // SECCIÓN SUPERIOR: FORMULARIO
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _weightController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'Peso (kg)', border: OutlineInputBorder()),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Card(
+                color: const Color(0xFF2C2C2C),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    children: [
+                      const Text(
+                        '1RM Estimado', 
+                        style: TextStyle(color: Colors.white70, fontSize: 16, letterSpacing: 1.2),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextField(
-                        controller: _repsController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Reps', border: OutlineInputBorder()),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${_1rmEstimado.toStringAsFixed(1)} kg',
+                        style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.redAccent),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextField(
-                        controller: _rpeController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'RPE', border: OutlineInputBorder()),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 24),
-                _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : ElevatedButton(
-                        onPressed: _guardarSet,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color.fromARGB(255, 76, 1, 1),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
-                        child: const Text('GUARDAR SERIE', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 32),
+              _buildCustomTextField(
+                controller: _pesoController,
+                label: 'Peso levantado (kg)',
+                icon: Icons.fitness_center,
+                isDecimal: true,
+              ),
+              const SizedBox(height: 16),
+              _buildCustomTextField(
+                controller: _repsController,
+                label: 'Repeticiones completadas',
+                icon: Icons.repeat,
+                isDecimal: false,
+              ),
+              const SizedBox(height: 16),
+              _buildCustomTextField(
+                controller: _rpeController,
+                label: 'RPE (Opcional - ej. 8.5)',
+                icon: Icons.speed,
+                isDecimal: true,
+              ),
+              const SizedBox(height: 40),
+              ElevatedButton(
+                onPressed: _isLoading ? null : _guardarSet,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color.fromARGB(255, 76, 1, 1),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        'GUARDAR SERIE', 
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.5),
                       ),
-              ],
-            ),
+              ),
+            ],
           ),
-          
-          // DIVISOR
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-            color: const Color(0xFF180A0A),
-            child: Text(
-              'HISTORIAL DE ${widget.exerciseName}',
-              style: const TextStyle(color: Colors.white70, fontSize: 14, letterSpacing: 1.2),
-            ),
-          ),
+        ),
+      ),
+    );
+  }
 
-          // SECCIÓN INFERIOR: LISTA DE HISTORIAL
-          Expanded(
-            child: _isLoadingHistory
-                ? const Center(child: CircularProgressIndicator())
-                : _historialSets.isEmpty
-                    ? const Center(child: Text('Aún no tienes series registradas.', style: TextStyle(color: Colors.white54)))
-                    : ListView.builder(
-                        itemCount: _historialSets.length,
-                        itemBuilder: (context, index) {
-                          final set = _historialSets[index];
-                          // Formateamos la fecha a YYYY-MM-DD
-                          final fechaRaw = set['workouts']['date'].toString();
-                          
-                          return Card(
-                            color: const Color(0xFF2C2C2C),
-                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: ListTile(
-                              leading: const Icon(Icons.fitness_center, color: Colors.white70),
-                              title: Text(
-                                '${set['weight']} kg x ${set['reps']} reps',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                              ),
-                              subtitle: Text('Fecha: $fechaRaw'),
-                              trailing: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.red[900],
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  'RPE ${set['rpe']}',
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-          ),
-        ],
+  // Widget de ayuda para mantener el código limpio
+  Widget _buildCustomTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    required bool isDecimal,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.numberWithOptions(decimal: isDecimal),
+      onChanged: (_) => _actualizar1RM(),
+      style: const TextStyle(color: Colors.white, fontSize: 18),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white54),
+        prefixIcon: Icon(icon, color: Colors.redAccent),
+        filled: true,
+        fillColor: const Color(0xFF252525),
+        enabledBorder: OutlineInputBorder(
+          borderSide: const BorderSide(color: Colors.white12, width: 1.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+          borderRadius: BorderRadius.circular(8),
+        ),
       ),
     );
   }
