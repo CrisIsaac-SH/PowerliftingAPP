@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_screen.dart';
 import 'record_set_screen.dart';
+import 'athlete_qr_screen.dart';
 import '../utils/one_rep_max.dart';
 //importaciones de componentes y pantallas y funcion de rm
 
@@ -274,17 +275,34 @@ class _HomeScreenState extends State<HomeScreen> {
                     Positioned(
                       top: 40,
                       right: 10,
-                      child: IconButton(
-                        icon: const Icon(Icons.logout, color: Colors.white70),
-                        onPressed: () async {
-                          await Supabase.instance.client.auth.signOut();
-                          if (context.mounted) {
-                            Navigator.of(context).pushAndRemoveUntil(
-                              MaterialPageRoute(builder: (context) => const LoginScreen()),
-                              (route) => false,
-                            );
-                          }
-                        },
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.qr_code_2, color: Colors.white70),
+                            tooltip: 'Mostrar mi QR de atleta',
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const AthleteQrScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.logout, color: Colors.white70),
+                            tooltip: 'Cerrar sesión',
+                            onPressed: () async {
+                              await Supabase.instance.client.auth.signOut();
+                              if (context.mounted) {
+                                Navigator.of(context).pushAndRemoveUntil(
+                                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                                  (route) => false,
+                                );
+                              }
+                            },
+                          ),
+                        ],
                       ),
                     ),
                     //etquieta que musetra el sbd completo

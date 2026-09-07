@@ -83,14 +83,15 @@ class _CompleteProfileState extends State<CompleteProfile> {
       final user = Supabase.instance.client.auth.currentUser;
 //si todo esta bien se guarda ee¿n la base de datos
       if (user != null) {
-        await Supabase.instance.client.from('profiles').update({
+        await Supabase.instance.client.from('profiles').upsert({
+          'id': user.id,
+          'email': user.email,
           'full_name': nombre,
           'weight': peso,
           'birth_date': _fechaNacimiento!.toIso8601String().split('T')[0],
           'gender': _genero,
           'is_coach': _isCoach,
-        }).eq('id', user.id);
-
+        });
 //si todo esta bien muestra mensaje y los manda al hpesoomescreen del atleta
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
