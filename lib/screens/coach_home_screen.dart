@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'scan_athlete_qr_screen.dart';
 
 import 'login_screen.dart';
 //importaciones de pantallas
@@ -155,6 +156,22 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
           foregroundColor: Colors.white,
           elevation: 0,
           actions: [
+            IconButton(
+    icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+    tooltip: 'Escanear QR',
+    onPressed: () async {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ScanAthleteQrScreen(),
+        ),
+      );
+
+      if (result == true) {
+        _cargarDatos();
+      }
+    },
+  ),
             IconButton(
               icon: const Icon(Icons.logout, color: Colors.redAccent),
               tooltip: 'Cerrar Sesión',
