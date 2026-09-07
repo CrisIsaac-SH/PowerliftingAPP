@@ -37,6 +37,9 @@ dependencies:
   supabase_flutter: ^2.17.2
   provider: ^6.1.5+1
   google_fonts: ^8.2.1
+  app_links: ^7.2.1      # deep link handling on mobile
+  url_launcher: ^6.2.0 
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:
