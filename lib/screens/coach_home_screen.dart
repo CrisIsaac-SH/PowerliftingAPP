@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'scan_athlete_qr_screen.dart';
-
 import 'login_screen.dart';
-//importaciones de pantallas
 
 class CoachHomeScreen extends StatefulWidget {
   const CoachHomeScreen({super.key});
@@ -22,7 +20,8 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
     super.initState();
     _cargarDatos();
   }
-//pantalla de los datos
+
+  // Pantalla de los datos
   Future<void> _cargarDatos() async {
     setState(() => _isLoading = true);
     try {
@@ -39,12 +38,13 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
 
       final List<String> assignedIds = relaciones.map((r) => r['athlete_id'].toString()).toList();
 
-      // cargar ateltas asignados
+      // cargar atletas asignados
       List<Map<String, dynamic>> listaMisAtletas = [];
       if (assignedIds.isNotEmpty) {
+        // CORRECCIÓN AQUÍ: Se cambió la consulta para acceder a exercises(name)
         final misAtletasResponse = await supabase
             .from('profiles')
-            .select('id, full_name, weight, gender, workouts(sets(exercise_name, weight, reps))')
+            .select('id, full_name, weight, gender, workouts(sets(weight, reps, exercises(name)))')
             .inFilter('id', assignedIds);
 
         for (var perfil in misAtletasResponse) {
@@ -53,18 +53,18 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
           double maxDeadlift = 0.0;
 
           final workouts = perfil['workouts'] as List<dynamic>? ?? [];
-          print('Entrenamientos de ${perfil['full_name']}: $workouts');
           for (var workout in workouts) {
             final sets = workout['sets'] as List<dynamic>? ?? [];
             for (var setItem in sets) {
-              final String exercise = (setItem['exercise_name'] ?? '').toString().toLowerCase();
+              
+              final String exercise = (setItem['exercises']?['name'] ?? '').toString().toLowerCase();
               final double weight = (setItem['weight'] ?? 0.0).toDouble();
 
               if (exercise.contains('squat') || exercise.contains('sentadilla')) {
                 if (weight > maxSquat) maxSquat = weight;
               } else if (exercise.contains('bench') || exercise.contains('banca')) {
                 if (weight > maxBench) maxBench = weight;
-              } else if (exercise.contains('deadlift') || exercise.contains('peso muerto')) {
+              } else if (exercise.contains('deadlift') || exercise.contains('peso muerto') || exercise.contains('muerto')) {
                 if (weight > maxDeadlift) maxDeadlift = weight;
               }
             }
@@ -83,7 +83,7 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
         }
       }
 
-      //cargar atletas que no estan asignados
+      // cargar atletas que no estan asignados
       final todosLosAtletasResponse = await supabase
           .from('profiles')
           .select('id, full_name, weight, gender')
@@ -108,7 +108,8 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
       }
     }
   }
-//funcion de vincukar atleta
+
+  // funcion de vincular atleta
   Future<void> _vincularAtleta(String athleteId) async {
     try {
       final currentUser = Supabase.instance.client.auth.currentUser;
@@ -135,8 +136,11 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
     }
   }
 
-  Future<void> _desvincularAtleta(String athleteId, String athleteName) async {
-    // 1. Mostrar diálogo de confirmación
+Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
+
+    final String athleteId = idBruto.toString(); 
+    
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -163,17 +167,19 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
       final currentUser = Supabase.instance.client.auth.currentUser;
       if (currentUser == null) return;
 
-      // 2. Eliminar de la base de datos
+      // 3. Eliminar de la base de datos usando .eq() en lugar de .match()
       await Supabase.instance.client
           .from('coach_athletes')
           .delete()
-          .match({'coach_id': currentUser.id, 'athlete_id': athleteId});
+          .eq('coach_id', currentUser.id)
+          .eq('athlete_id', athleteId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$athleteName ha sido removido de tu equipo'), backgroundColor: Colors.orange),
         );
-        _cargarDatos(); // Recargar las listas
+        // 4. Recargar los datos hace que el atleta desaparezca visualmente
+        _cargarDatos(); 
       }
     } catch (e) {
       if (mounted) {
@@ -184,13 +190,80 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
     }
   }
 
-  Future<void> _cerrarSesion() async {
-    await Supabase.instance.client.auth.signOut();
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
-    }
+  // WIDGET DEL MENÚ LATERAL (SIDEBAR) PARA EL COACH
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: const Color(0xFF2C2C2C),
+      child: Column(
+        children: [
+          const DrawerHeader(
+            decoration: BoxDecoration(
+              color: Color(0xFF180A0A),
+              border: Border(bottom: BorderSide(color: Colors.redAccent, width: 2)),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: Colors.redAccent,
+                  radius: 30,
+                  child: Icon(Icons.shield, size: 35, color: Colors.white),
+                ),
+                SizedBox(width: 15),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Panel',
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 5),
+                      Text(
+                        'Modo Coach',
+                        style: TextStyle(color: Colors.white54, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.qr_code_scanner, color: Colors.white),
+            title: const Text('Escanear QR Atleta', style: TextStyle(color: Colors.white, fontSize: 16)),
+            onTap: () async {
+              Navigator.pop(context); // Cierra el Drawer
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ScanAthleteQrScreen()),
+              );
+
+              if (result == true) {
+                _cargarDatos(); // Recarga si se escaneó y vinculó a alguien
+              }
+            },
+          ),
+          
+          const Spacer(), // Empuja el botón de cerrar sesión hacia abajo
+          const Divider(color: Colors.white12, height: 1),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.redAccent),
+            title: const Text('Cerrar sesión', style: TextStyle(color: Colors.redAccent, fontSize: 16)),
+            onTap: () async {
+              await Supabase.instance.client.auth.signOut();
+              if (mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  (route) => false,
+                );
+              }
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
   }
 
   @override
@@ -199,34 +272,13 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
       length: 2,
       child: Scaffold(
         backgroundColor: const Color(0xFF333333),
+        drawer: _buildDrawer(), // SE AGREGA EL SIDEBAR
         appBar: AppBar(
           title: const Text('PANEL DE COACH', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
           backgroundColor: const Color(0xFF180A0A),
-          foregroundColor: Colors.white,
+          foregroundColor: Colors.white, // Esto hace que el ícono de menú hamburguesa sea blanco
           elevation: 0,
-          actions: [
-            IconButton(
-    icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-    tooltip: 'Escanear QR',
-    onPressed: () async {
-      final result = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const ScanAthleteQrScreen(),
-        ),
-      );
-
-      if (result == true) {
-        _cargarDatos();
-      }
-    },
-  ),
-            IconButton(
-              icon: const Icon(Icons.logout, color: Colors.redAccent),
-              tooltip: 'Cerrar Sesión',
-              onPressed: _cerrarSesion,
-            ),
-          ],
+          // Se quitaron las "actions" (botones de arriba) para mudarlos al Drawer
           bottom: const TabBar(
             indicatorColor: Colors.redAccent,
             labelColor: Colors.redAccent,
@@ -300,7 +352,6 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
   }
 
   // Tarjeta para los atletas que YA SON del Coach
-// Tarjeta para los atletas que YA SON del Coach
   Widget _buildMiAtletaCard(Map<String, dynamic> atleta) {
     return Card(
       color: const Color(0xFF2C2C2C),
@@ -312,8 +363,6 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
       ),
       child: InkWell(
         onTap: () {
-          // TODO: Navegar a la pantalla de detalle/historial del atleta
-          // Navigator.push(context, MaterialPageRoute(builder: (context) => AtletaDetalleScreen(atletaId: atleta['id'])));
           print('Ver detalles de ${atleta['full_name']}');
         },
         splashColor: Colors.redAccent.withOpacity(0.2),
@@ -349,7 +398,7 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
                     ),
                   ),
                   
-                  // Nuevo: Botón de desvincular
+                  // Botón de desvincular
                   IconButton(
                     icon: const Icon(Icons.person_remove, color: Colors.white38, size: 20),
                     tooltip: 'Desvincular',
@@ -373,7 +422,6 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
                       ],
                     ),
                   ),
-                  // Moví el TOTAL aquí abajo para que se vea como un resumen de los 3 lifts
                   Container(
                     margin: const EdgeInsets.only(left: 10),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

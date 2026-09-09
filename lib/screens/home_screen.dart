@@ -15,6 +15,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // 1. LLAVE PARA CONTROLAR EL MENÚ LATERAL (DRAWER)
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   String _nombre = '';
   bool _isLoading = true;
   
@@ -117,7 +120,6 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
-        // Incluimos workout_id y workouts(date) para usarlos en la navegación
         final data = await Supabase.instance.client
             .from('sets')
             .select('workout_id, weight, reps, rpe, exercises(name), workouts!inner(user_id, date)')
@@ -151,7 +153,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () async {
-            // Abre RecordSetScreen enviándole el ejercicio inicial
             await Navigator.push(
               context,
               MaterialPageRoute(
@@ -212,6 +213,81 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // 2. WIDGET DEL MENÚ LATERAL (SIDEBAR)
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: const Color(0xFF2C2C2C),
+      child: Column(
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(
+              color: Color(0xFF180A0A),
+              border: Border(bottom: BorderSide(color: Colors.redAccent, width: 2)),
+            ),
+            child: Row(
+              children: [
+                const CircleAvatar(
+                  backgroundColor: Colors.redAccent,
+                  radius: 30,
+                  child: Icon(Icons.person, size: 35, color: Colors.white),
+                ),
+                const SizedBox(width: 15),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _nombre,
+                        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 5),
+                      const Text(
+                        'Perfil de Atleta',
+                        style: TextStyle(color: Colors.white54, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.qr_code_2, color: Colors.white),
+            title: const Text('Mi código QR', style: TextStyle(color: Colors.white, fontSize: 16)),
+            onTap: () {
+              Navigator.pop(context); // Cierra el Drawer
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AthleteQrScreen()),
+              );
+            },
+          ),
+          // Aquí puedes agregar más opciones en el futuro (Ajustes, Calculadora RM, etc.)
+          
+          const Spacer(), // Empuja el botón de cerrar sesión hacia abajo
+          const Divider(color: Colors.white12, height: 1),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.redAccent),
+            title: const Text('Cerrar sesión', style: TextStyle(color: Colors.redAccent, fontSize: 16)),
+            onTap: () async {
+              await Supabase.instance.client.auth.signOut();
+              if (context.mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  (route) => false,
+                );
+              }
+            },
+          ),
+          const SizedBox(height: 20), // Margen inferior
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const backgroundColor = Color(0xFF333333);
@@ -219,7 +295,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final double total = _maxSquat + _maxBench + _maxDeadlift;
 
     return Scaffold(
+      key: _scaffoldKey, // 3. ASIGNAMOS LA LLAVE AL SCAFFOLD
       backgroundColor: backgroundColor,
+      drawer: _buildDrawer(), // 4. AGREGAMOS EL DRAWER
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
           : Column(
@@ -236,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: darkAccentColor,
                         padding: const EdgeInsets.only(top: 60, left: 20, right: 20),
                         child: Text(
-                          'Bienvenido, "$_nombre"',
+                          'Bienvenido,\n"$_nombre"',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 18,
@@ -246,37 +324,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
+                    // 5. NUEVO BOTÓN DE MENÚ (HAMBURGUESA)
                     Positioned(
                       top: 40,
-                      right: 10,
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.qr_code_2, color: Colors.white70),
-                            tooltip: 'Mostrar mi QR de atleta',
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const AthleteQrScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.logout, color: Colors.white70),
-                            tooltip: 'Cerrar sesión',
-                            onPressed: () async {
-                              await Supabase.instance.client.auth.signOut();
-                              if (context.mounted) {
-                                Navigator.of(context).pushAndRemoveUntil(
-                                  MaterialPageRoute(builder: (context) => const LoginScreen()),
-                                  (route) => false,
-                                );
-                              }
-                            },
-                          ),
-                        ],
+                      left: 10,
+                      child: IconButton(
+                        icon: const Icon(Icons.menu, color: Colors.white, size: 28),
+                        tooltip: 'Abrir menú',
+                        onPressed: () {
+                          // Abre el menú lateral
+                          _scaffoldKey.currentState?.openDrawer();
+                        },
                       ),
                     ),
                     Positioned(
@@ -286,7 +344,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         decoration: BoxDecoration(
                           color: Colors.black,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white, width: 2),
+                          border: Border.all(color: Colors.redAccent.withOpacity(0.5), width: 2), // Un toque de rojo
                         ),
                         child: Text(
                           'Total SBD: ${total.toStringAsFixed(1)} kg',
@@ -332,36 +390,36 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  children: [
-    const Text(
-      'HISTORIAL GENERAL',
-      style: TextStyle(
-        color: Colors.white70,
-        fontSize: 14,
-        letterSpacing: 1.2,
-      ),
-    ),
-    TextButton.icon(
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const HistoryScreen()),
-        );
-      },
-      icon: const Icon(Icons.show_chart, color: Colors.redAccent, size: 18),
-      label: const Text(
-        'Ver todo',
-        style: TextStyle(color: Colors.redAccent, fontSize: 13),
-      ),
-      style: TextButton.styleFrom(
-        padding: EdgeInsets.zero,
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-    ),
-  ],
-),
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'HISTORIAL GENERAL',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 14,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const HistoryScreen()),
+                                );
+                              },
+                              icon: const Icon(Icons.show_chart, color: Colors.redAccent, size: 18),
+                              label: const Text(
+                                'Ver todo',
+                                style: TextStyle(color: Colors.redAccent, fontSize: 13),
+                              ),
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 5),
                         Expanded(
                           child: _isLoadingHistory
@@ -377,7 +435,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                         
                                         return InkWell(
                                           onTap: () async {
-                                            // Navegación al detalle del entrenamiento
                                             await Navigator.push(
                                               context,
                                               MaterialPageRoute(

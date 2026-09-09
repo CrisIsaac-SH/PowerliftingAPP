@@ -18,7 +18,6 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
   double _1rmEstimado = 0.0;
   bool _isLoading = false;
 
-  // --- VARIABLES PARA EL DROPDOWN ---
   List<Map<String, dynamic>> _exercises = [];
   String? _selectedExerciseId;
   bool _isLoadingExercises = true;
@@ -40,7 +39,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
       setState(() {
         _exercises = List<Map<String, dynamic>>.from(response);
         
-        // --- MAGIA AQUÍ: Buscamos si nos enviaron un ejercicio inicial ---
+        
         if (widget.initialExercise != null && _exercises.isNotEmpty) {
           try {
             // Busca un ejercicio que contenga la palabra (ej. "squat") ignorando mayúsculas

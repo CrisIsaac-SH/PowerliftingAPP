@@ -14,28 +14,27 @@ class _ScanAthleteQrScreenState extends State<ScanAthleteQrScreen> {
   bool _isProcessing = false;
 
   Future<void> _vincularAtletaDesdeQr(String rawValue) async {
+    // Evitamos que escanee varias veces, PERO SIN setState para no apagar la cámara
     if (_isProcessing) return;
-
-    setState(() => _isProcessing = true);
+    _isProcessing = true; 
 
     try {
       final data = jsonDecode(rawValue);
 
       if (data['type'] != 'athlete_link' || data['athlete_id'] == null) {
-        throw Exception('QR inválido');
+        throw Exception('El código QR es inválido para esta aplicación.');
       }
 
       final athleteId = data['athlete_id'].toString();
-
       final supabase = Supabase.instance.client;
       final currentUser = supabase.auth.currentUser;
 
       if (currentUser == null) {
-        throw Exception('Coach no autenticado');
+        throw Exception('Coach no autenticado.');
       }
 
       if (currentUser.id == athleteId) {
-        throw Exception('No puedes agregarte a ti mismo');
+        throw Exception('No puedes agregarte a ti mismo.');
       }
 
       await supabase.from('coach_athletes').insert({
@@ -46,20 +45,37 @@ class _ScanAthleteQrScreenState extends State<ScanAthleteQrScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('¡Atleta agregado correctamente!'),
+            content: Text('¡Atleta agregado a tu equipo!'),
             backgroundColor: Colors.green,
           ),
         );
+        Navigator.pop(context, true); 
+      }
 
-        Navigator.pop(context, true);
+    } on PostgrestException catch (e) {
+      _isProcessing = false; // Liberamos el escáner sin setState
+      if (mounted) {
+        if (e.code == '23505') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Este atleta ya pertenece a tu equipo.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          Navigator.pop(context, false);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error de BD: ${e.message}'), backgroundColor: Colors.red),
+          );
+        }
       }
     } catch (e) {
+      _isProcessing = false; // Liberamos el escáner sin setState
       if (mounted) {
-        setState(() => _isProcessing = false);
-
+        final mensajeError = e.toString().replaceAll('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al escanear QR: $e'),
+            content: Text(mensajeError),
             backgroundColor: Colors.redAccent,
           ),
         );

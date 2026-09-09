@@ -69,6 +69,8 @@ flutter:
     - assets/squat.jpeg
     - assets/bench.jpeg
     - assets/deadlift.jpeg
+    - assets/icons/google.png
+    
 
   # To add assets to your application, add an assets section, like this:
   # assets:
