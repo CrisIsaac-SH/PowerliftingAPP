@@ -4,56 +4,49 @@ import 'login_screen.dart';
 import 'record_set_screen.dart';
 import 'athlete_qr_screen.dart';
 import '../utils/one_rep_max.dart';
-//importaciones de componentes y pantallas y funcion de rm
-
+import 'workout_detail_screen.dart';
+import 'history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-//estado de la pantalla principal del home
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  //variables del user
   String _nombre = '';
   bool _isLoading = true;
   
-  //variables para el historial general que esta debajo 
   bool _isLoadingHistory = true;
   List<dynamic> _historialGeneral = [];
 
-  //marcas del deporte para mostrarlo en la suma
   double _maxSquat = 0.0;
   double _maxBench = 0.0;
   double _maxDeadlift = 0.0;
 
-
   @override
-  //datos a mostrar
   void initState() {
     super.initState();
     _inicializarDatos();
   }
-  //funcion para inicializar los datos del usuario y cargar marcas personales e historial
+
   Future<void> _inicializarDatos() async {
     await _obtenerDatosDelUsuario();
     _cargarMarcasPersonales();
     _obtenerHistorialGeneral();
   }
 
-//fucnion que obtiene los datos del user y muestra 
   Future<void> _obtenerDatosDelUsuario() async {
-    try {//si el user es nulo no hace nada
+    try {
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
-        //si si hay user muestra el nombre y si es coach o no
         final data = await Supabase.instance.client
             .from('profiles')
             .select('full_name, is_coach')
             .eq('id', user.id)
             .single();
-//si es coach lo redirige a la pantalla de coach
+
         if (mounted) {
           setState(() {
             _nombre = data['full_name'] ?? 'Atleta';
@@ -71,52 +64,40 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-//funcion para cargar marcas y calculo 
   Future<void> _cargarMarcasPersonales() async {
     try {
-      //conexion a supabase como lo de arriba
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
-      //si no hay user no hace nada
       if (user == null) return;
-//ve a workouts y bisca sets y compara lo maximo 
+
       final response = await supabase
           .from('workouts')
-          .select('id, sets(exercise_name, weight, reps)')
+          .select('id, sets(weight, reps, exercises(name))')
           .eq('user_id', user.id);
-//variables que guarda desde workouts lo maximo de cada ejercicio
+
       double maxSq = 0;
       double maxBp = 0;
       double maxDl = 0;
 
-//verifica cada workout y cada set
       for (var workout in response) {
-        //mencionado arriba que recorre cada set
-        final sets = workout['sets'] as List<dynamic>;
-        //
+        final sets = workout['sets'] as List<dynamic>? ?? [];
         for (var s in sets) {
-          //conversion de datos de minusculas y a string por si acaso
-          final exercise = s['exercise_name'].toString().toLowerCase();
-          //parseo de datos de peso 
+          final exerciseName = (s['exercises']?['name'] ?? '').toString().toLowerCase();
           final weight = double.tryParse(s['weight'].toString()) ?? 0.0;
-          //parseo identico que el de peso
           final reps = int.tryParse(s['reps'].toString()) ?? 0;
           
-          //calculo del rm en utils
           final rmCalculado = PowerliftingUtils.calcular1RM(weight, reps);
 
-          //si el ejercicio contiene squat o sentadilla compara si es mayor que el maximo y lo guardado en la varibale max
-          if (exercise.contains('squat') || exercise.contains('sentadilla')) {
+          if (exerciseName.contains('squat') || exerciseName.contains('sentadilla')) {
             if (rmCalculado > maxSq) maxSq = rmCalculado;
-            //lo mismo pero en banca
-          } else if (exercise.contains('bench') || exercise.contains('banca')) {
+          } else if (exerciseName.contains('bench') || exerciseName.contains('banca')) {
             if (rmCalculado > maxBp) maxBp = rmCalculado;
-          } else if (exercise.contains('deadlift') || exercise.contains('muerto')) {
+          } else if (exerciseName.contains('deadlift') || exerciseName.contains('muerto')) {
             if (rmCalculado > maxDl) maxDl = rmCalculado;
           }
         }
       }
-//actaualizacion de los datos
+
       if (mounted) {
         setState(() {
           _maxSquat = maxSq;
@@ -129,24 +110,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-//funcion para cargar el historial de las marcas
   Future<void> _obtenerHistorialGeneral() async {
-    //si no esta montada la seccion no pasa nada
     if (!mounted) return;
     setState(() => _isLoadingHistory = true);
     
     try {
-      //aqui virificamos si hya conexion de datos y que no sea nulo
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
+        // Incluimos workout_id y workouts(date) para usarlos en la navegación
         final data = await Supabase.instance.client
             .from('sets')
-            .select('exercise_name, weight, reps, rpe, workouts!inner(user_id, date)')
+            .select('workout_id, weight, reps, rpe, exercises(name), workouts!inner(user_id, date)')
             .eq('workouts.user_id', user.id)
             .order('created_at', ascending: false)
             .limit(10);
 
-//si esta montada la seccion actualiza el historial
         if (mounted) {
           setState(() {
             _historialGeneral = data;
@@ -160,7 +138,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-//widget que construye la tarjetade cada ejercicio
   Widget _buildExerciseCard(String title, String imagePath, double maxWeight) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -174,14 +151,13 @@ class _HomeScreenState extends State<HomeScreen> {
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () async {
-            ////usamos await para esperar que el user regrese de la pantalla de RecordSetScreen antes de actualizar los datos
+            // Abre RecordSetScreen enviándole el ejercicio inicial
             await Navigator.push(
               context,
-              MaterialPageRoute(//aqui se redirige a la pantalla de registro de set y se pasa el nombre del ejercicio
-                builder: (context) => RecordSetScreen(ejercicio: title),
+              MaterialPageRoute(
+                builder: (context) => RecordSetScreen(initialExercise: title),
               ),
             );
-            //cuando vuelve se actualiza los datos de la homescreen
             _obtenerHistorialGeneral();
             _cargarMarcasPersonales();
           },
@@ -236,7 +212,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-//widgert oara construir la pantalla
   @override
   Widget build(BuildContext context) {
     const backgroundColor = Color(0xFF333333);
@@ -246,10 +221,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: backgroundColor,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
           : Column(
               children: [
-                // Encabezado
                 Stack(
                   clipBehavior: Clip.none,
                   alignment: Alignment.topCenter,
@@ -305,7 +279,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
-                    //etquieta que musetra el sbd completo
                     Positioned(
                       bottom: -15,
                       child: Container(
@@ -316,7 +289,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           border: Border.all(color: Colors.white, width: 2),
                         ),
                         child: Text(
-                          //parseo de datos a string y redondeo a 1 decimal
                           'Total SBD: ${total.toStringAsFixed(1)} kg',
                           style: const TextStyle(
                             color: Colors.white,
@@ -330,10 +302,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
 
-
                 const SizedBox(height: 50),
 
-                //tarjetas de ejercicios
                 Expanded(
                   flex: 3, 
                   child: RefreshIndicator(
@@ -341,7 +311,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       children: [
-                        //imagenes de los ejercicios
                         _buildExerciseCard('SQUAT', 'assets/squat.jpeg', _maxSquat),
                         _buildExerciseCard('BENCH', 'assets/bench.jpeg', _maxBench),
                         _buildExerciseCard('DEADLIFT', 'assets/deadlift.jpeg', _maxDeadlift),
@@ -350,7 +319,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-                //parte del historial de los ejercicios
                 Expanded(
                   flex: 2, 
                   child: Container(
@@ -363,18 +331,41 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'HISTORIAL GENERAL',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 14,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
+                        Row(
+  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  children: [
+    const Text(
+      'HISTORIAL GENERAL',
+      style: TextStyle(
+        color: Colors.white70,
+        fontSize: 14,
+        letterSpacing: 1.2,
+      ),
+    ),
+    TextButton.icon(
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const HistoryScreen()),
+        );
+      },
+      icon: const Icon(Icons.show_chart, color: Colors.redAccent, size: 18),
+      label: const Text(
+        'Ver todo',
+        style: TextStyle(color: Colors.redAccent, fontSize: 13),
+      ),
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+    ),
+  ],
+),
                         const SizedBox(height: 5),
                         Expanded(
                           child: _isLoadingHistory
-                              ? const Center(child: CircularProgressIndicator())
+                              ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
                               : _historialGeneral.isEmpty
                                   ? const Center(child: Text('Sin levantamientos recientes.', style: TextStyle(color: Colors.white54)))
                                   : ListView.builder(
@@ -382,20 +373,44 @@ class _HomeScreenState extends State<HomeScreen> {
                                       itemCount: _historialGeneral.length,
                                       itemBuilder: (context, index) {
                                         final set = _historialGeneral[index];
-                                        return Padding(
-                                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                set['exercise_name'],
-                                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                        final exerciseName = set['exercises']?['name'] ?? 'Ejercicio';
+                                        
+                                        return InkWell(
+                                          onTap: () async {
+                                            // Navegación al detalle del entrenamiento
+                                            await Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) => WorkoutDetailScreen(
+                                                  workoutId: set['workout_id'],
+                                                  date: set['workouts']?['date'] ?? '',
+                                                ),
                                               ),
-                                              Text(
-                                                '${set['weight']}kg x ${set['reps']} @ RPE ${set['rpe']}',
-                                                style: const TextStyle(color: Colors.white70),
-                                              ),
-                                            ],
+                                            );
+                                            _obtenerHistorialGeneral();
+                                            _cargarMarcasPersonales();
+                                          },
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Text(
+                                                  exerciseName,
+                                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                                ),
+                                                Row(
+                                                  children: [
+                                                    Text(
+                                                      '${set['weight']}kg x ${set['reps']} ${set['rpe'] != null ? '@ RPE ${set['rpe']}' : ''}',
+                                                      style: const TextStyle(color: Colors.white70),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    const Icon(Icons.chevron_right, color: Colors.white38, size: 18),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         );
                                       },
@@ -411,7 +426,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// -------------------------------------------------------------parte de arriba con forma detallada
 class HeaderClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
@@ -424,7 +438,6 @@ class HeaderClipper extends CustomClipper<Path> {
     return path;
   }
 
-//
   @override
   bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }

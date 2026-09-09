@@ -135,6 +135,55 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
     }
   }
 
+  Future<void> _desvincularAtleta(String athleteId, String athleteName) async {
+    // 1. Mostrar diálogo de confirmación
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2C2C2C),
+        title: const Text('Desvincular Atleta', style: TextStyle(color: Colors.white)),
+        content: Text('¿Estás seguro de que deseas quitar a $athleteName de tu equipo?', 
+                 style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Desvincular', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      if (currentUser == null) return;
+
+      // 2. Eliminar de la base de datos
+      await Supabase.instance.client
+          .from('coach_athletes')
+          .delete()
+          .match({'coach_id': currentUser.id, 'athlete_id': athleteId});
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$athleteName ha sido removido de tu equipo'), backgroundColor: Colors.orange),
+        );
+        _cargarDatos(); // Recargar las listas
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al desvincular: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
   Future<void> _cerrarSesion() async {
     await Supabase.instance.client.auth.signOut();
     if (mounted) {
@@ -251,72 +300,102 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
   }
 
   // Tarjeta para los atletas que YA SON del Coach
+// Tarjeta para los atletas que YA SON del Coach
   Widget _buildMiAtletaCard(Map<String, dynamic> atleta) {
     return Card(
       color: const Color(0xFF2C2C2C),
       margin: const EdgeInsets.only(bottom: 16.0),
+      clipBehavior: Clip.antiAlias, // Necesario para que el efecto InkWell no se salga de las curvas
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: const BorderSide(color: Colors.white12, width: 1),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const CircleAvatar(
-                  backgroundColor: Color.fromARGB(255, 76, 1, 1),
-                  radius: 22,
-                  child: Icon(Icons.person, color: Colors.redAccent),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        atleta['full_name'],
-                        style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Peso: ${atleta['weight']} kg | Sexo: ${atleta['gender']}',
-                        style: const TextStyle(color: Colors.white54, fontSize: 13),
-                      ),
-                    ],
+      child: InkWell(
+        onTap: () {
+          // TODO: Navegar a la pantalla de detalle/historial del atleta
+          // Navigator.push(context, MaterialPageRoute(builder: (context) => AtletaDetalleScreen(atletaId: atleta['id'])));
+          print('Ver detalles de ${atleta['full_name']}');
+        },
+        splashColor: Colors.redAccent.withOpacity(0.2),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const CircleAvatar(
+                    backgroundColor: Color.fromARGB(255, 76, 1, 1),
+                    radius: 22,
+                    child: Icon(Icons.person, color: Colors.redAccent),
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF180A0A),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          atleta['full_name'],
+                          style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Peso: ${atleta['weight']} kg | Sexo: ${atleta['gender']}',
+                          style: const TextStyle(color: Colors.white54, fontSize: 13),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Column(
-                    children: [
-                      const Text('TOTAL', style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
-                      Text(
-                        '${atleta['total'].toStringAsFixed(0)} kg',
-                        style: const TextStyle(color: Colors.redAccent, fontSize: 14, fontWeight: FontWeight.bold),
-                      ),
-                    ],
+                  
+                  // Nuevo: Botón de desvincular
+                  IconButton(
+                    icon: const Icon(Icons.person_remove, color: Colors.white38, size: 20),
+                    tooltip: 'Desvincular',
+                    onPressed: () => _desvincularAtleta(atleta['id'], atleta['full_name']),
                   ),
-                ),
-              ],
-            ),
-            const Divider(color: Colors.white12, height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatBadge('SQ', '${atleta['max_squat'].toStringAsFixed(1)} kg'),
-                _buildStatBadge('BP', '${atleta['max_bench'].toStringAsFixed(1)} kg'),
-                _buildStatBadge('DL', '${atleta['max_deadlift'].toStringAsFixed(1)} kg'),
-              ],
-            ),
-          ],
+                ],
+              ),
+              const Divider(color: Colors.white12, height: 24),
+              
+              // Totales y Estadísticas
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildStatBadge('SQ', '${atleta['max_squat'].toStringAsFixed(1)} kg'),
+                        _buildStatBadge('BP', '${atleta['max_bench'].toStringAsFixed(1)} kg'),
+                        _buildStatBadge('DL', '${atleta['max_deadlift'].toStringAsFixed(1)} kg'),
+                      ],
+                    ),
+                  ),
+                  // Moví el TOTAL aquí abajo para que se vea como un resumen de los 3 lifts
+                  Container(
+                    margin: const EdgeInsets.only(left: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF180A0A),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text('TOTAL', style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
+                        Text(
+                          '${atleta['total'].toStringAsFixed(0)} kg',
+                          style: const TextStyle(color: Colors.redAccent, fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
