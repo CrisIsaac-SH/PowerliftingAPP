@@ -1,6 +1,30 @@
 import 'dart:math' as math;
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
+enum PoseSide { left, right }
+
+class ExercisePoseAnalysis {
+  final PoseSide side;
+  final double primaryAngle;
+  final double secondaryAngle;
+  final String statusMessage;
+  final bool isValidForm;
+  final PoseLandmark? trackingLandmark;
+  final double confidence;
+  final bool hasRequiredLandmarks;
+
+  ExercisePoseAnalysis({
+    required this.side,
+    required this.primaryAngle,
+    required this.secondaryAngle,
+    required this.statusMessage,
+    required this.isValidForm,
+    this.trackingLandmark,
+    required this.confidence,
+    required this.hasRequiredLandmarks,
+  });
+}
+
 class PoseMathUtils {
   /// Calcula el ángulo entre tres puntos anatómicos usando la función arco tangente (atan2)
   /// [firstPoint] ej: Cadera
@@ -11,16 +35,11 @@ class PoseMathUtils {
     PoseLandmark midPoint,
     PoseLandmark lastPoint,
   ) {
-    // atan2 nos da el ángulo en radianes
     final double result =
         math.atan2(lastPoint.y - midPoint.y, lastPoint.x - midPoint.x) -
         math.atan2(firstPoint.y - midPoint.y, firstPoint.x - midPoint.x);
 
-    // Convertimos de radianes a grados
-    double angle = result * (180 / math.pi);
-
-    // Nos aseguramos de que el ángulo sea un valor absoluto y no mayor a 180 grados
-    angle = angle.abs();
+    double angle = (result * (180 / math.pi)).abs();
     if (angle > 180.0) {
       angle = 360.0 - angle;
     }
@@ -28,12 +47,228 @@ class PoseMathUtils {
     return angle;
   }
 
-  /// Evalúa la profundidad de la sentadilla.
-  /// En el Powerlifting, la cadera debe romper el paralelo con la rodilla.
+  /// Suavizado exponencial (EMA) para reducir la sensibilidad y fluctuaciones de micro-movimientos
+  static double suavizarValor(double nuevoValor, double valorAnterior, double factor) {
+    if (valorAnterior == 0.0) return nuevoValor;
+    return (nuevoValor * factor) + (valorAnterior * (1.0 - factor));
+  }
+
+  /// Evalúa la profundidad de la sentadilla (rompe la paralela)
   static bool esSentadillaProfunda(double anguloRodilla) {
-    // Este valor depende un poco del ángulo de la cámara, pero típicamente 
-    // cuando la cadera baja de la rodilla, el ángulo se cierra a unos 70 - 90 grados.
-    // Ajustaremos este valor empíricamente cuando lo pruebes.
-    return anguloRodilla < 85.0; 
+    return anguloRodilla <= 88.0;
+  }
+
+  /// Evalúa si en press de banca la barra alcanzó el pecho
+  static bool esPressBancaEnPecho(double anguloCodo) {
+    return anguloCodo <= 92.0;
+  }
+
+  /// Evalúa si en press de banca se completó el bloqueo
+  static bool esPressBancaBloqueo(double anguloCodo) {
+    return anguloCodo >= 155.0;
+  }
+
+  /// Evalúa si en peso muerto se alcanzó el bloqueo articular de cadera y rodillas
+  static bool esBloqueoPesoMuerto(double anguloCadera, double anguloRodilla) {
+    return anguloCadera >= 160.0 && anguloRodilla >= 160.0;
+  }
+
+  /// Determina automáticamente qué lado del cuerpo (izquierdo o derecho)
+  /// está más visible para la cámara según la probabilidad (likelihood) de los puntos.
+  static PoseSide obtenerLadoMasVisible(Pose pose, String ejercicio) {
+    final normalizado = ejercicio.toUpperCase();
+
+    final rHip = pose.landmarks[PoseLandmarkType.rightHip];
+    final lHip = pose.landmarks[PoseLandmarkType.leftHip];
+    final rKnee = pose.landmarks[PoseLandmarkType.rightKnee];
+    final lKnee = pose.landmarks[PoseLandmarkType.leftKnee];
+    final rShoulder = pose.landmarks[PoseLandmarkType.rightShoulder];
+    final lShoulder = pose.landmarks[PoseLandmarkType.leftShoulder];
+    final rElbow = pose.landmarks[PoseLandmarkType.rightElbow];
+    final lElbow = pose.landmarks[PoseLandmarkType.leftElbow];
+
+    double confDerecha = 0.0;
+    double confIzquierda = 0.0;
+
+    if (normalizado.contains('BENCH') || normalizado.contains('BANCA')) {
+      confDerecha = (rShoulder?.likelihood ?? 0) + (rElbow?.likelihood ?? 0);
+      confIzquierda = (lShoulder?.likelihood ?? 0) + (lElbow?.likelihood ?? 0);
+    } else {
+      confDerecha = (rHip?.likelihood ?? 0) + (rKnee?.likelihood ?? 0);
+      confIzquierda = (lHip?.likelihood ?? 0) + (lKnee?.likelihood ?? 0);
+    }
+
+    return confDerecha >= confIzquierda ? PoseSide.right : PoseSide.left;
+  }
+
+  /// Realiza el análisis biomecánico específico según el ejercicio (SQUAT, BENCH, DEADLIFT)
+  /// Permite pasar un [ladoBloqueado] para evitar que el algoritmo alterne entre izquierda y derecha
+  static ExercisePoseAnalysis analizarPoseParaEjercicio(
+    Pose pose,
+    String ejercicio, {
+    PoseSide? ladoBloqueado,
+  }) {
+    final normalizado = ejercicio.toUpperCase();
+    final side = ladoBloqueado ?? obtenerLadoMasVisible(pose, ejercicio);
+
+    if (normalizado.contains('BENCH') || normalizado.contains('BANCA')) {
+      return _analizarBenchPress(pose, side);
+    } else if (normalizado.contains('DEADLIFT') || normalizado.contains('MUERTO')) {
+      return _analizarDeadlift(pose, side);
+    } else {
+      // Por defecto SQUAT (Sentadilla)
+      return _analizarSquat(pose, side);
+    }
+  }
+
+  static ExercisePoseAnalysis _analizarSquat(Pose pose, PoseSide side) {
+    final isRight = side == PoseSide.right;
+    final hip = pose.landmarks[isRight ? PoseLandmarkType.rightHip : PoseLandmarkType.leftHip];
+    final knee = pose.landmarks[isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee];
+    final ankle = pose.landmarks[isRight ? PoseLandmarkType.rightAnkle : PoseLandmarkType.leftAnkle];
+
+    final hasPoints = hip != null && knee != null && ankle != null;
+    final minConfidence = 0.40;
+    final isVisible = hasPoints &&
+        hip.likelihood >= minConfidence &&
+        knee.likelihood >= minConfidence;
+
+    if (!isVisible) {
+      return ExercisePoseAnalysis(
+        side: side,
+        primaryAngle: 180.0,
+        secondaryAngle: 180.0,
+        statusMessage: 'Buscando articulaciones...',
+        isValidForm: false,
+        trackingLandmark: hip ?? knee,
+        confidence: 0.0,
+        hasRequiredLandmarks: false,
+      );
+    }
+
+    final anguloRodilla = calcularAngulo(hip, knee, ankle);
+    final isDeep = esSentadillaProfunda(anguloRodilla);
+
+    String message;
+    if (isDeep) {
+      message = '¡PARALELA ROTA (VÁLIDA)!';
+    } else if (anguloRodilla < 115) {
+      message = 'Descendiendo (Falta profundidad)';
+    } else {
+      message = 'De pie / Inicio';
+    }
+
+    return ExercisePoseAnalysis(
+      side: side,
+      primaryAngle: anguloRodilla,
+      secondaryAngle: 0.0,
+      statusMessage: message,
+      isValidForm: isDeep,
+      trackingLandmark: hip, // La cadera define la trayectoria del descenso
+      confidence: (hip.likelihood + knee.likelihood) / 2.0,
+      hasRequiredLandmarks: true,
+    );
+  }
+
+  static ExercisePoseAnalysis _analizarBenchPress(Pose pose, PoseSide side) {
+    final isRight = side == PoseSide.right;
+    final shoulder = pose.landmarks[isRight ? PoseLandmarkType.rightShoulder : PoseLandmarkType.leftShoulder];
+    final elbow = pose.landmarks[isRight ? PoseLandmarkType.rightElbow : PoseLandmarkType.leftElbow];
+    final wrist = pose.landmarks[isRight ? PoseLandmarkType.rightWrist : PoseLandmarkType.leftWrist];
+
+    final hasPoints = shoulder != null && elbow != null && wrist != null;
+    final minConfidence = 0.40;
+    final isVisible = hasPoints &&
+        shoulder.likelihood >= minConfidence &&
+        elbow.likelihood >= minConfidence;
+
+    if (!isVisible) {
+      return ExercisePoseAnalysis(
+        side: side,
+        primaryAngle: 180.0,
+        secondaryAngle: 180.0,
+        statusMessage: 'Buscando brazos...',
+        isValidForm: false,
+        trackingLandmark: wrist ?? elbow,
+        confidence: 0.0,
+        hasRequiredLandmarks: false,
+      );
+    }
+
+    final anguloCodo = calcularAngulo(shoulder, elbow, wrist);
+    final isChest = esPressBancaEnPecho(anguloCodo);
+    final isLockout = esPressBancaBloqueo(anguloCodo);
+
+    String message;
+    if (isChest) {
+      message = '¡PECHO ALCANZADO (ROM COMPLETO)!';
+    } else if (isLockout) {
+      message = 'Bloqueo completo (Arriba)';
+    } else {
+      message = 'En recorrido...';
+    }
+
+    return ExercisePoseAnalysis(
+      side: side,
+      primaryAngle: anguloCodo,
+      secondaryAngle: 0.0,
+      statusMessage: message,
+      isValidForm: isChest || isLockout,
+      trackingLandmark: wrist, // La muñeca representa el trayecto de la barra
+      confidence: (shoulder.likelihood + elbow.likelihood) / 2.0,
+      hasRequiredLandmarks: true,
+    );
+  }
+
+  static ExercisePoseAnalysis _analizarDeadlift(Pose pose, PoseSide side) {
+    final isRight = side == PoseSide.right;
+    final shoulder = pose.landmarks[isRight ? PoseLandmarkType.rightShoulder : PoseLandmarkType.leftShoulder];
+    final hip = pose.landmarks[isRight ? PoseLandmarkType.rightHip : PoseLandmarkType.leftHip];
+    final knee = pose.landmarks[isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee];
+    final ankle = pose.landmarks[isRight ? PoseLandmarkType.rightAnkle : PoseLandmarkType.leftAnkle];
+    final wrist = pose.landmarks[isRight ? PoseLandmarkType.rightWrist : PoseLandmarkType.leftWrist];
+
+    final hasPoints = hip != null && knee != null && ankle != null;
+    final minConfidence = 0.40;
+    final isVisible = hasPoints &&
+        hip.likelihood >= minConfidence &&
+        knee.likelihood >= minConfidence;
+
+    if (!isVisible) {
+      return ExercisePoseAnalysis(
+        side: side,
+        primaryAngle: 180.0,
+        secondaryAngle: 180.0,
+        statusMessage: 'Buscando postura...',
+        isValidForm: false,
+        trackingLandmark: wrist ?? hip,
+        confidence: 0.0,
+        hasRequiredLandmarks: false,
+      );
+    }
+
+    final anguloRodilla = calcularAngulo(hip, knee, ankle);
+    final anguloCadera = shoulder != null ? calcularAngulo(shoulder, hip, knee) : 180.0;
+    final isLockout = esBloqueoPesoMuerto(anguloCadera, anguloRodilla);
+
+    String message;
+    if (isLockout) {
+      message = '¡BLOQUEO COMPLETO (VÁLIDO)!';
+    } else if (anguloCadera < 115) {
+      message = 'Posición inicial / Suelo';
+    } else {
+      message = 'En tracción...';
+    }
+
+    return ExercisePoseAnalysis(
+      side: side,
+      primaryAngle: anguloCadera,
+      secondaryAngle: anguloRodilla,
+      statusMessage: message,
+      isValidForm: isLockout,
+      trackingLandmark: wrist ?? hip, // Muñeca/barra para la trayectoria vertical
+      confidence: (hip.likelihood + knee.likelihood) / 2.0,
+      hasRequiredLandmarks: true,
+    );
   }
 }

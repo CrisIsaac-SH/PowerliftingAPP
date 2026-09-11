@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/one_rep_max.dart';
-import 'ai_coach/pose_detector_view.dart'; // Asegúrate de ajustar esta ruta según donde creaste la carpeta
+import 'ai_coach/pose_detector_view.dart';
 
 class RecordSetScreen extends StatefulWidget {
   final String? initialExercise;
@@ -17,24 +17,34 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
   final _repsController = TextEditingController();
   final _rpeController = TextEditingController(); 
   
-  double _1rmEstimado = 0.0;
+  double _rmEstimado = 0.0;
   bool _isLoading = false;
 
   // Variables para la IA y el Video
   File? _videoFile;
   Map<String, dynamic>? _aiMetrics;
+  List<Offset> _puntosTrayectoria = [];
 
-  List<Map<String, dynamic>> _exercises = [];
   String? _selectedExerciseId;
+  String _nombreEjercicioMostrado = '';
   bool _isLoadingExercises = true;
 
   @override
   void initState() {
     super.initState();
+    _nombreEjercicioMostrado = widget.initialExercise ?? 'SQUAT';
     _fetchExercises();
   }
 
-  // --- Descargar ejercicios de Supabase ---
+  @override
+  void dispose() {
+    _pesoController.dispose();
+    _repsController.dispose();
+    _rpeController.dispose();
+    super.dispose();
+  }
+
+  // --- Descargar y enlazar ejercicio fijo de Supabase ---
   Future<void> _fetchExercises() async {
     try {
       final response = await Supabase.instance.client
@@ -42,22 +52,43 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
           .select('id, name')
           .order('name', ascending: true);
 
-      setState(() {
-        _exercises = List<Map<String, dynamic>>.from(response);
-        
-        if (widget.initialExercise != null && _exercises.isNotEmpty) {
-          try {
-            final match = _exercises.firstWhere(
-              (e) => e['name'].toString().toLowerCase().contains(widget.initialExercise!.toLowerCase()),
-            );
-            _selectedExerciseId = match['id'].toString();
-          } catch (e) {
-            _selectedExerciseId = null;
-          }
-        }
+      final List<Map<String, dynamic>> lista = List<Map<String, dynamic>>.from(response);
 
-        _isLoadingExercises = false;
-      });
+      String? ejercicioEncontradoId;
+      String ejercicioEncontradoNombre = widget.initialExercise ?? 'SQUAT';
+
+      final target = (widget.initialExercise ?? 'SQUAT').toLowerCase();
+
+      for (var e in lista) {
+        final name = (e['name'] ?? '').toString().toLowerCase();
+
+        final esSquat = (target.contains('squat') || target.contains('sentadilla')) &&
+            (name.contains('squat') || name.contains('sentadilla'));
+        final esBench = (target.contains('bench') || target.contains('banca')) &&
+            (name.contains('bench') || name.contains('banca'));
+        final esDeadlift = (target.contains('deadlift') || target.contains('muerto')) &&
+            (name.contains('deadlift') || name.contains('muerto'));
+
+        if (esSquat || esBench || esDeadlift || name.contains(target) || target.contains(name)) {
+          ejercicioEncontradoId = e['id'].toString();
+          ejercicioEncontradoNombre = e['name'].toString();
+          break;
+        }
+      }
+
+      // Si no hubo coincidencia exacta pero hay ejercicios en la base de datos
+      if (ejercicioEncontradoId == null && lista.isNotEmpty) {
+        ejercicioEncontradoId = lista.first['id'].toString();
+        ejercicioEncontradoNombre = lista.first['name'].toString();
+      }
+
+      if (mounted) {
+        setState(() {
+          _selectedExerciseId = ejercicioEncontradoId;
+          _nombreEjercicioMostrado = ejercicioEncontradoNombre;
+          _isLoadingExercises = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -72,30 +103,61 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
     final peso = double.tryParse(_pesoController.text) ?? 0.0;
     final reps = int.tryParse(_repsController.text) ?? 0;
     setState(() {
-      _1rmEstimado = PowerliftingUtils.calcular1RM(peso, reps);
+      _rmEstimado = PowerliftingUtils.calcular1RM(peso, reps);
     });
   }
 
   // --- Método para abrir la cámara con Visión Artificial ---
   Future<void> _abrirCamaraIA() async {
+    final exerciseName = widget.initialExercise ?? _nombreEjercicioMostrado;
+
     final resultado = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const PoseDetectorView()),
+      MaterialPageRoute(
+        builder: (context) => PoseDetectorView(
+          exercise: exerciseName,
+        ),
+      ),
     );
 
     if (resultado != null && resultado is Map) {
+      final metrics = resultado['ai_metrics'] as Map<String, dynamic>?;
+      final videoPath = resultado['video_path'] as String?;
+
+      List<Offset> puntos = [];
+      if (metrics != null && metrics['trajectory_points'] != null && metrics['trajectory_points'] is List) {
+        puntos = (metrics['trajectory_points'] as List)
+            .map((item) => Offset(
+                  (item['x'] as num).toDouble(),
+                  (item['y'] as num).toDouble(),
+                ))
+            .toList();
+      }
+
       setState(() {
-        if (resultado['video_path'] != null) {
-          _videoFile = File(resultado['video_path']);
+        if (videoPath != null) {
+          _videoFile = File(videoPath);
         }
-        _aiMetrics = resultado['ai_metrics'];
+        _aiMetrics = metrics;
+        _puntosTrayectoria = puntos;
+
+        // Si la IA contó repeticiones y el usuario aún no ingresó las reps, sugerirlas automáticamente
+        if (metrics != null && metrics['reps_detected'] != null) {
+          final repsIA = metrics['reps_detected'];
+          if (repsIA is int && repsIA > 0 && _repsController.text.isEmpty) {
+            _repsController.text = repsIA.toString();
+            _actualizar1RM();
+          }
+        }
       });
 
       if (mounted) {
+        final reps = metrics?['reps_detected'] ?? 0;
+        final cuerpo = metrics?['body_detected'] == true ? 'Cuerpo detectado y bloqueado' : 'Análisis completado';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('¡Video y métricas de IA vinculados a la serie!'),
-            backgroundColor: Colors.purpleAccent,
+          SnackBar(
+            content: Text('¡$cuerpo! $reps reps registradas con preview disponible.'),
+            backgroundColor: Colors.green,
           ),
         );
       }
@@ -105,7 +167,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
   Future<void> _guardarSet() async {
     if (_selectedExerciseId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, selecciona un ejercicio'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('Por favor, selecciona un ejercicio válido'), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -120,6 +182,63 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
       );
       return;
     }
+
+    // PREVIEW DE CONFIRMACIÓN ANTES DE GUARDAR DEFINITIVAMENTE
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF252525),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.greenAccent),
+            SizedBox(width: 8),
+            Text('Confirmar Serie', style: TextStyle(color: Colors.white, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ejercicio: ${_nombreEjercicioMostrado.toUpperCase()}',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Text('• Carga: $peso kg x $reps reps ${rpe != null ? "(@ RPE $rpe)" : ""}', style: const TextStyle(color: Colors.white70)),
+            Text('• 1RM Estimado: ${_rmEstimado.toStringAsFixed(1)} kg', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+            if (_aiMetrics != null) ...[
+              const Divider(color: Colors.white24, height: 16),
+              Text(
+                '• IA Coach: ${_aiMetrics!['reps_detected'] ?? 0} reps (${_aiMetrics!['valid_reps'] ?? 0} con ROM válido)',
+                style: const TextStyle(color: Colors.greenAccent, fontSize: 13),
+              ),
+              Text(
+                '• Profundidad alcanzada: ${(_aiMetrics!['best_angle'] as num?)?.toStringAsFixed(0) ?? 'N/A'}°',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              Text(
+                '• Técnica: ${_aiMetrics!['technique_evaluation'] ?? 'Verificada'}',
+                style: const TextStyle(color: Colors.white60, fontSize: 11),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Revisar', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 178, 16, 16)),
+            child: const Text('Confirmar y Guardar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar != true) return;
 
     setState(() => _isLoading = true);
 
@@ -177,9 +296,9 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
           'exercise_id': _selectedExerciseId,
           'weight': peso,
           'reps': reps,
-          if (rpe != null) 'rpe': rpe, 
-          if (videoUrl != null) 'video_url': videoUrl,
-          if (_aiMetrics != null) 'ai_metrics': _aiMetrics,
+          ...?((rpe != null) ? {'rpe': rpe} : null),
+          ...?((videoUrl != null) ? {'video_url': videoUrl} : null),
+          ...?((_aiMetrics != null) ? {'ai_metrics': _aiMetrics} : null),
         });
 
         if (mounted) {
@@ -190,9 +309,10 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
           _repsController.clear();
           _rpeController.clear();
           setState(() {
-            _1rmEstimado = 0.0;
+            _rmEstimado = 0.0;
             _videoFile = null;
             _aiMetrics = null;
+            _puntosTrayectoria.clear();
           });
         }
       }
@@ -223,6 +343,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Tarjeta 1RM Estimado
               Card(
                 color: const Color(0xFF2C2C2C),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -237,50 +358,85 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '${_1rmEstimado.toStringAsFixed(1)} kg',
+                        '${_rmEstimado.toStringAsFixed(1)} kg',
                         style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.redAccent),
                       ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
               
+              // SELECCIÓN FIJA DEL EJERCICIO (REQUERIMIENTO: Sin desplegable de elegir, sólo indicar el seleccionado)
               _isLoadingExercises
                   ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
-                  : DropdownButtonFormField<String>(
-                      decoration: InputDecoration(
-                        labelText: 'Selecciona el Ejercicio',
-                        labelStyle: const TextStyle(color: Colors.white54),
-                        prefixIcon: const Icon(Icons.list_alt, color: Colors.redAccent),
-                        filled: true,
-                        fillColor: const Color(0xFF252525),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: const BorderSide(color: Colors.white12, width: 1.5),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: const BorderSide(color: Colors.redAccent, width: 2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                  : Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF252525),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.6), width: 1.8),
                       ),
-                      dropdownColor: const Color(0xFF2C2C2C),
-                      style: const TextStyle(color: Colors.white, fontSize: 18),
-                      value: _selectedExerciseId,
-                      items: _exercises.map((exercise) {
-                        return DropdownMenuItem<String>(
-                          value: exercise['id'] as String,
-                          child: Text(exercise['name'] as String),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedExerciseId = newValue;
-                        });
-                      },
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.fitness_center, color: Colors.redAccent, size: 26),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'EJERCICIO SELECCIONADO',
+                                  style: TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1.1,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _nombreEjercicioMostrado.toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.white10,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.lock_outline, size: 14, color: Colors.white70),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Fijo',
+                                  style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
               
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               _buildCustomTextField(
                 controller: _pesoController,
                 label: 'Peso levantado (kg)',
@@ -313,7 +469,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                   decoration: BoxDecoration(
                     color: const Color(0xFF252525),
                     border: Border.all(
-                      color: _videoFile != null ? Colors.purpleAccent : Colors.white24,
+                      color: _aiMetrics != null ? Colors.greenAccent : Colors.purpleAccent,
                       width: 1.5,
                     ),
                     borderRadius: BorderRadius.circular(8),
@@ -321,8 +477,9 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                   child: Row(
                     children: [
                       Icon(
-                        _videoFile != null ? Icons.check_circle : Icons.auto_awesome,
-                        color: _videoFile != null ? Colors.greenAccent : Colors.purpleAccent,
+                        _aiMetrics != null ? Icons.check_circle : Icons.auto_awesome,
+                        color: _aiMetrics != null ? Colors.greenAccent : Colors.purpleAccent,
+                        size: 28,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -330,7 +487,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              _videoFile != null ? 'Video de IA Listo' : 'Grabar con IA Coach',
+                              _aiMetrics != null ? 'IA Coach Vinculado' : 'Grabar con IA Coach',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -338,16 +495,16 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                               ),
                             ),
                             Text(
-                              _videoFile != null
-                                  ? 'Análisis de técnica procesado'
-                                  : 'Analiza tu postura en tiempo real',
+                              _aiMetrics != null
+                                  ? 'Cuerpo detectado y ${_aiMetrics!['reps_detected'] ?? 0} reps registradas'
+                                  : 'Detecta tu cuerpo y analiza ${widget.initialExercise ?? 'el ejercicio'} en vivo',
                               style: const TextStyle(color: Colors.white54, fontSize: 12),
                             ),
                           ],
                         ),
                       ),
                       Icon(
-                        _videoFile != null ? Icons.refresh : Icons.arrow_forward_ios,
+                        _aiMetrics != null ? Icons.refresh : Icons.arrow_forward_ios,
                         color: Colors.white38,
                         size: 18,
                       ),
@@ -356,16 +513,179 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                 ),
               ),
 
+              // =========================================================
+              // PREVIEW VISUAL DEL EJERCICIO ANTES DE GUARDAR LA SERIE
+              // =========================================================
+              if (_aiMetrics != null || _pesoController.text.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF252525),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.5), width: 1.5),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.preview, color: Colors.cyanAccent, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'PREVIEW DEL EJERCICIO - ${_nombreEjercicioMostrado.toUpperCase()}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.cyanAccent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'Listo para guardar',
+                              style: TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Gráfico visual de la curva de trayectoria (si fue capturado con IA)
+                      if (_puntosTrayectoria.isNotEmpty) ...[
+                        Container(
+                          height: 110,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.black45,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Stack(
+                              children: [
+                                Positioned.fill(
+                                  child: CustomPaint(
+                                    painter: TrajectoryMiniPreviewPainter(
+                                      points: _puntosTrayectoria,
+                                      isDeep: (_aiMetrics?['valid_reps'] ?? 0) > 0,
+                                    ),
+                                  ),
+                                ),
+                                const Positioned(
+                                  top: 6,
+                                  left: 10,
+                                  child: Text(
+                                    'Curva de Bar Path / Desplazamiento',
+                                    style: TextStyle(color: Colors.white38, fontSize: 10),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // Cuadrícula de datos del preview
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E1E1E),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Carga Levantada:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                Text(
+                                  '${_pesoController.text.isEmpty ? "0" : _pesoController.text} kg x ${_repsController.text.isEmpty ? "0" : _repsController.text} reps',
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('1RM Estimado:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                Text(
+                                  '${_rmEstimado.toStringAsFixed(1)} kg',
+                                  style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                              ],
+                            ),
+                            if (_aiMetrics != null) ...[
+                              const Divider(color: Colors.white12, height: 14),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Repeticiones IA:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                  Text(
+                                    '${_aiMetrics!['reps_detected'] ?? 0} (Válidas: ${_aiMetrics!['valid_reps'] ?? 0})',
+                                    style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Profundidad / ROM:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                  Text(
+                                    '${(_aiMetrics!['best_angle'] as num?)?.toStringAsFixed(0) ?? 'N/A'}°',
+                                    style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Evaluación Técnica:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                  Expanded(
+                                    child: Text(
+                                      _aiMetrics!['technique_evaluation'] ?? 'Completado',
+                                      textAlign: TextAlign.right,
+                                      style: const TextStyle(color: Colors.white60, fontSize: 11),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 32),
 
-              ElevatedButton(
+              ElevatedButton.icon(
                 onPressed: _isLoading ? null : _guardarSet,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color.fromARGB(255, 76, 1, 1),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                child: _isLoading
+                icon: _isLoading ? const SizedBox.shrink() : const Icon(Icons.save, color: Colors.white),
+                label: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
                     : const Text(
                         'GUARDAR SERIE', 
