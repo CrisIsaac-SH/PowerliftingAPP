@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/one_rep_max.dart';
+import 'ai_coach/pose_detector_view.dart'; // Asegúrate de ajustar esta ruta según donde creaste la carpeta
 
 class RecordSetScreen extends StatefulWidget {
   final String? initialExercise;
@@ -18,6 +20,10 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
   double _1rmEstimado = 0.0;
   bool _isLoading = false;
 
+  // Variables para la IA y el Video
+  File? _videoFile;
+  Map<String, dynamic>? _aiMetrics;
+
   List<Map<String, dynamic>> _exercises = [];
   String? _selectedExerciseId;
   bool _isLoadingExercises = true;
@@ -25,10 +31,10 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchExercises(); // Cargamos los ejercicios al abrir la pantalla
+    _fetchExercises();
   }
 
-  // ---Descargar ejercicios de Supabase ---
+  // --- Descargar ejercicios de Supabase ---
   Future<void> _fetchExercises() async {
     try {
       final response = await Supabase.instance.client
@@ -39,16 +45,13 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
       setState(() {
         _exercises = List<Map<String, dynamic>>.from(response);
         
-        
         if (widget.initialExercise != null && _exercises.isNotEmpty) {
           try {
-            // Busca un ejercicio que contenga la palabra (ej. "squat") ignorando mayúsculas
             final match = _exercises.firstWhere(
               (e) => e['name'].toString().toLowerCase().contains(widget.initialExercise!.toLowerCase()),
             );
             _selectedExerciseId = match['id'].toString();
           } catch (e) {
-            // Si no lo encuentra, no pasa nada, se queda vacío
             _selectedExerciseId = null;
           }
         }
@@ -71,6 +74,32 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
     setState(() {
       _1rmEstimado = PowerliftingUtils.calcular1RM(peso, reps);
     });
+  }
+
+  // --- Método para abrir la cámara con Visión Artificial ---
+  Future<void> _abrirCamaraIA() async {
+    final resultado = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const PoseDetectorView()),
+    );
+
+    if (resultado != null && resultado is Map) {
+      setState(() {
+        if (resultado['video_path'] != null) {
+          _videoFile = File(resultado['video_path']);
+        }
+        _aiMetrics = resultado['ai_metrics'];
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('¡Video y métricas de IA vinculados a la serie!'),
+            backgroundColor: Colors.purpleAccent,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _guardarSet() async {
@@ -123,24 +152,47 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
           workoutId = workoutExistente['id'];
         }
 
+        // 1. Subida del video a Supabase Storage (si existe)
+        String? videoUrl;
+        if (_videoFile != null) {
+          try {
+            final fileExtension = _videoFile!.path.split('.').last;
+            final fileName = '${user.id}_${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
+            
+            await supabase.storage
+                .from('videos')
+                .upload('sets_videos/$fileName', _videoFile!);
+
+            videoUrl = supabase.storage
+                .from('videos')
+                .getPublicUrl('sets_videos/$fileName');
+          } catch (e) {
+            debugPrint('Error al subir video a Storage: $e');
+          }
+        }
+
+        // 2. Inserción de la serie con URL de video y métricas de IA
         await supabase.from('sets').insert({
           'workout_id': workoutId,
           'exercise_id': _selectedExerciseId,
           'weight': peso,
           'reps': reps,
           if (rpe != null) 'rpe': rpe, 
+          if (videoUrl != null) 'video_url': videoUrl,
+          if (_aiMetrics != null) 'ai_metrics': _aiMetrics,
         });
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('¡Serie registrada con éxito!'), backgroundColor: Colors.green),
+            const SnackBar(content: Text('¡Serie y análisis guardados con éxito!'), backgroundColor: Colors.green),
           );
           _pesoController.clear();
           _repsController.clear();
           _rpeController.clear();
           setState(() {
             _1rmEstimado = 0.0;
-            // No reseteamos _selectedExerciseId por si quiere registrar otra serie del mismo ejercicio
+            _videoFile = null;
+            _aiMetrics = null;
           });
         }
       }
@@ -249,7 +301,63 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                 icon: Icons.speed,
                 isDecimal: true,
               ),
-              const SizedBox(height: 40),
+              
+              const SizedBox(height: 24),
+
+              // --- BOTÓN / TARJETA PARA IA COACH ---
+              InkWell(
+                onTap: _abrirCamaraIA,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF252525),
+                    border: Border.all(
+                      color: _videoFile != null ? Colors.purpleAccent : Colors.white24,
+                      width: 1.5,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _videoFile != null ? Icons.check_circle : Icons.auto_awesome,
+                        color: _videoFile != null ? Colors.greenAccent : Colors.purpleAccent,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _videoFile != null ? 'Video de IA Listo' : 'Grabar con IA Coach',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            Text(
+                              _videoFile != null
+                                  ? 'Análisis de técnica procesado'
+                                  : 'Analiza tu postura en tiempo real',
+                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        _videoFile != null ? Icons.refresh : Icons.arrow_forward_ios,
+                        color: Colors.white38,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 32),
+
               ElevatedButton(
                 onPressed: _isLoading ? null : _guardarSet,
                 style: ElevatedButton.styleFrom(
