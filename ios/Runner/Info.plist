@@ -4,6 +4,10 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>La cámara se usa para analizar tu técnica y grabar el video de cada serie.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>El micrófono puede usarse al grabar el video de tu serie.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

@@ -29,6 +29,8 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
   int _cameraIndex = 0; // 0 = trasera, 1 = frontal
   bool _canProcess = true;
   bool _isBusy = false;
+  bool _isRecordingVideo = false;
+  bool _isExiting = false;
 
   // Estado de detección
   bool _cuerpoDetectado = false;
@@ -88,13 +90,83 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       );
 
       await controller.initialize();
-      if (!mounted) return;
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      try {
+        await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
+      } catch (e) {
+        debugPrint('No se pudo bloquear la orientación de captura: $e');
+      }
 
       _cameraController = controller;
-      _cameraController?.startImageStream(_procesarImagenDeCamara);
+      await _iniciarGrabacionConAnalisis(controller);
+      if (!mounted) {
+        await _liberarCamara();
+        return;
+      }
       setState(() {});
     } catch (e) {
       debugPrint('Error al inicializar la cámara: $e');
+    }
+  }
+
+  Future<void> _iniciarGrabacionConAnalisis(CameraController controller) async {
+    try {
+      await controller.startVideoRecording(onAvailable: _procesarImagenDeCamara);
+      _isRecordingVideo = true;
+    } catch (e) {
+      debugPrint('No se pudo iniciar la grabación, se continúa solo con análisis: $e');
+      _isRecordingVideo = false;
+      try {
+        await controller.startImageStream(_procesarImagenDeCamara);
+      } catch (streamError) {
+        debugPrint('Tampoco se pudo iniciar el stream de análisis: $streamError');
+      }
+    }
+  }
+
+  Future<void> _liberarCamara({bool descartarGrabacion = true}) async {
+    final controller = _cameraController;
+    _cameraController = null;
+    _isRecordingVideo = false;
+    if (controller == null) return;
+
+    try {
+      if (controller.value.isRecordingVideo) {
+        final file = await controller.stopVideoRecording();
+        if (descartarGrabacion) {
+          try {
+            await File(file.path).delete();
+          } catch (_) {}
+        }
+      } else if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+    } catch (e) {
+      debugPrint('Error al detener cámara: $e');
+    }
+
+    await controller.dispose();
+  }
+
+  Future<String?> _detenerGrabacionYObtenerRuta() async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isRecordingVideo) {
+      _isRecordingVideo = false;
+      return null;
+    }
+
+    try {
+      final file = await controller.stopVideoRecording();
+      _isRecordingVideo = false;
+      return file.path;
+    } catch (e) {
+      debugPrint('Error al detener la grabación: $e');
+      _isRecordingVideo = false;
+      return null;
     }
   }
 
@@ -110,9 +182,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       _smoothedAngle = 0.0;
     });
 
-    await _cameraController?.stopImageStream();
-    await _cameraController?.dispose();
-    _cameraController = null;
+    await _liberarCamara();
 
     _cameraIndex = (_cameraIndex + 1) % _cameras.length;
     await _iniciarCamara();
@@ -681,7 +751,12 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
     );
   }
 
-  void _confirmarYSalir(double mejorAnguloFinal, List<Offset> puntos) {
+  Future<void> _confirmarYSalir(double mejorAnguloFinal, List<Offset> puntos) async {
+    if (_isExiting) return;
+    _isExiting = true;
+    final videoPath = await _detenerGrabacionYObtenerRuta();
+    if (!mounted) return;
+
     Navigator.pop(context, {
       'ai_metrics': {
         'exercise': widget.exercise,
@@ -693,20 +768,93 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
         'trajectory_points': puntos.map((p) => {'x': p.dx, 'y': p.dy}).toList(),
         'is_locked': _isLocked,
         'timestamp': DateTime.now().toIso8601String(),
-      }
+      },
+      'video_path': ?videoPath,
     });
+  }
+
+  Future<void> _salirSinGuardar() async {
+    if (_isExiting) return;
+    _isExiting = true;
+    await _liberarCamara();
+    if (mounted) Navigator.pop(context);
   }
 
   @override
   void dispose() {
     _canProcess = false;
     _poseDetector.close();
-    _cameraController?.dispose();
+    final controller = _cameraController;
+    _cameraController = null;
+    if (controller != null) {
+      if (controller.value.isRecordingVideo) {
+        controller.stopVideoRecording().whenComplete(() => controller.dispose());
+      } else {
+        controller.dispose();
+      }
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _salirSinGuardar();
+      },
+      child: _buildCameraBody(),
+    );
+  }
+
+  Widget _buildVistaPreviaCamara() {
+    final controller = _cameraController!;
+    if (!controller.value.isInitialized) {
+      return const SizedBox.shrink();
+    }
+
+    // En iOS CameraPreview ya queda derecho. En Android, al grabar CameraX
+    // entrega el buffer del sensor (apaisado) y hay que rotarlo a vertical.
+    if (!Platform.isAndroid || !controller.value.isRecordingVideo) {
+      return FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: MediaQuery.of(context).size.width,
+          height: MediaQuery.of(context).size.height,
+          child: CameraPreview(controller),
+        ),
+      );
+    }
+
+    final previewSize = controller.value.previewSize;
+    if (previewSize == null) {
+      return CameraPreview(controller);
+    }
+
+    // CameraX entrega el frame al revés del sensor: giramos en el sentido contrario.
+    final sensorTurns = (4 - (_cameras[_cameraIndex].sensorOrientation ~/ 90)) % 4;
+    final rotated = sensorTurns % 2 == 1;
+
+    return FittedBox(
+      fit: BoxFit.cover,
+      clipBehavior: Clip.hardEdge,
+      child: SizedBox(
+        width: rotated ? previewSize.height : previewSize.width,
+        height: rotated ? previewSize.width : previewSize.height,
+        child: RotatedBox(
+          quarterTurns: sensorTurns,
+          child: SizedBox(
+            width: previewSize.width,
+            height: previewSize.height,
+            child: controller.buildPreview(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCameraBody() {
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -715,7 +863,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
           elevation: 0,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Navigator.pop(context),
+            onPressed: _salirSinGuardar,
           ),
         ),
         body: const Center(
@@ -734,23 +882,13 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       );
     }
 
-    final size = MediaQuery.of(context).size;
-    final camera = _cameraController!.value;
-    var scale = size.aspectRatio * camera.aspectRatio;
-    if (scale < 1) scale = 1 / scale;
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Preview de la cámara ajustado
-          Transform.scale(
-            scale: scale,
-            child: Center(
-              child: CameraPreview(_cameraController!),
-            ),
-          ),
+          // 1. Preview de la cámara (corrige la rotación de CameraX al grabar)
+          Positioned.fill(child: _buildVistaPreviaCamara()),
 
           // 2. Capa de dibujo de trazas del cuerpo y articulaciones
           ?_customPaint,
@@ -767,7 +905,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
                   backgroundColor: Colors.black54,
                   child: IconButton(
                     icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: _salirSinGuardar,
                   ),
                 ),
                 Container(
@@ -783,6 +921,10 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (_isRecordingVideo) ...[
+                        const Icon(Icons.fiber_manual_record, color: Colors.redAccent, size: 12),
+                        const SizedBox(width: 6),
+                      ],
                       Icon(
                         Icons.fitness_center,
                         color: _isLocked ? Colors.cyanAccent : Colors.redAccent,

@@ -2,6 +2,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "powerliftingapp",
+            "request": "launch",
+            "type": "dart",
+            "toolArgs": [
+                "--dart-define-from-file=s3.env.json"
+            ]
+        },
+        {
             "name": "Flutter Web (Puerto 3000)",
             "request": "launch",
             "type": "dart",
@@ -10,6 +18,9 @@
                 "chrome",
                 "--web-port",
                 "3000"
+            ],
+            "toolArgs": [
+                "--dart-define-from-file=s3.env.json"
             ]
         }
     ]

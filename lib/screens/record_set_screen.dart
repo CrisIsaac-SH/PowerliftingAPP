@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/s3_config.dart';
+import '../services/s3_video_service.dart';
 import '../utils/one_rep_max.dart';
 import 'ai_coach/pose_detector_view.dart';
 
@@ -213,6 +215,11 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                 '• IA Coach: ${_aiMetrics!['reps_detected'] ?? 0} reps (${_aiMetrics!['valid_reps'] ?? 0} con ROM válido)',
                 style: const TextStyle(color: Colors.greenAccent, fontSize: 13),
               ),
+              if (_videoFile != null)
+                const Text(
+                  '• Video grabado: se subirá a S3 al guardar',
+                  style: TextStyle(color: Colors.cyanAccent, fontSize: 12),
+                ),
               Text(
                 '• Profundidad alcanzada: ${(_aiMetrics!['best_angle'] as num?)?.toStringAsFixed(0) ?? 'N/A'}°',
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -271,22 +278,28 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
           workoutId = workoutExistente['id'];
         }
 
-        // 1. Subida del video a Supabase Storage (si existe)
+        // 1. Subida del video a AWS S3 (si existe)
         String? videoUrl;
         if (_videoFile != null) {
           try {
-            final fileExtension = _videoFile!.path.split('.').last;
-            final fileName = '${user.id}_${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
-            
-            await supabase.storage
-                .from('videos')
-                .upload('sets_videos/$fileName', _videoFile!);
-
-            videoUrl = supabase.storage
-                .from('videos')
-                .getPublicUrl('sets_videos/$fileName');
+            videoUrl = await S3VideoService.uploadSetVideo(
+              file: _videoFile!,
+              userId: user.id,
+            );
           } catch (e) {
-            debugPrint('Error al subir video a Storage: $e');
+            debugPrint('Error al subir video a S3: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    S3Config.isConfigured
+                        ? 'La serie se guardará, pero el video no se pudo subir: $e'
+                        : 'Configura tu bucket S3 en lib/config/s3_config.dart para subir el video.',
+                  ),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
           }
         }
 
@@ -496,8 +509,10 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                             ),
                             Text(
                               _aiMetrics != null
-                                  ? 'Cuerpo detectado y ${_aiMetrics!['reps_detected'] ?? 0} reps registradas'
-                                  : 'Detecta tu cuerpo y analiza ${widget.initialExercise ?? 'el ejercicio'} en vivo',
+                                  ? (_videoFile != null
+                                      ? 'Video listo para S3 · ${_aiMetrics!['reps_detected'] ?? 0} reps'
+                                      : 'Cuerpo detectado y ${_aiMetrics!['reps_detected'] ?? 0} reps registradas')
+                                  : 'Graba el video, detecta tu cuerpo y analiza ${widget.initialExercise ?? 'el ejercicio'}',
                               style: const TextStyle(color: Colors.white54, fontSize: 12),
                             ),
                           ],

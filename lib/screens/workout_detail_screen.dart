@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/s3_video_service.dart';
+import 'set_video_player_screen.dart';
+
 class WorkoutDetailScreen extends StatefulWidget {
   final String workoutId;
   final String date;
@@ -30,7 +33,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     try {
       final response = await Supabase.instance.client
           .from('sets')
-          .select('id, weight, reps, rpe, exercises(name)')
+          .select('id, weight, reps, rpe, video_url, ai_metrics, exercises(name)')
           .eq('workout_id', widget.workoutId);
 
       setState(() {
@@ -48,10 +51,11 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   }
 
   // Eliminar una serie específica de Supabase
-  Future<void> _deleteSet(String setId) async {
+  Future<void> _deleteSet(Map<String, dynamic> setItem) async {
     try {
-      await Supabase.instance.client.from('sets').delete().eq('id', setId);
-      _fetchSets(); // Recargamos la lista
+      await S3VideoService.deleteIfPossible(setItem['video_url'] as String?);
+      await Supabase.instance.client.from('sets').delete().eq('id', setItem['id']);
+      _fetchSets();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Serie eliminada'), backgroundColor: Colors.orange),
@@ -64,6 +68,107 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
         );
       }
     }
+  }
+
+  void _abrirVideo(Map<String, dynamic> setItem) {
+    final videoUrl = setItem['video_url'] as String?;
+    if (videoUrl == null || videoUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Esta serie no tiene video guardado')),
+      );
+      return;
+    }
+
+    final exerciseName = setItem['exercises']?['name'] ?? 'Serie';
+    final metrics = setItem['ai_metrics'] is Map
+        ? Map<String, dynamic>.from(setItem['ai_metrics'] as Map)
+        : null;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SetVideoPlayerScreen(
+          videoUrl: videoUrl,
+          title: exerciseName.toString(),
+          exercise: (metrics?['exercise'] ?? exerciseName).toString(),
+        ),
+      ),
+    );
+  }
+
+  void _showSetDetail(Map<String, dynamic> setItem) {
+    final exerciseName = setItem['exercises']?['name'] ?? 'Ejercicio';
+    final weight = setItem['weight'];
+    final reps = setItem['reps'];
+    final rpe = setItem['rpe'];
+    final videoUrl = setItem['video_url'] as String?;
+    final metrics = setItem['ai_metrics'] is Map
+        ? Map<String, dynamic>.from(setItem['ai_metrics'] as Map)
+        : null;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF2C2C2C),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Detalle: $exerciseName',
+                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '${weight}kg x $reps ${rpe != null ? '@ RPE $rpe' : ''}',
+                style: const TextStyle(color: Colors.white70, fontSize: 15),
+              ),
+              if (metrics != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'IA Coach: ${metrics['reps_detected'] ?? 0} reps · ${metrics['technique_evaluation'] ?? 'Análisis guardado'}',
+                  style: const TextStyle(color: Colors.greenAccent, fontSize: 13),
+                ),
+              ],
+              const SizedBox(height: 18),
+              if (videoUrl != null && videoUrl.isNotEmpty)
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color.fromARGB(255, 76, 1, 1),
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _abrirVideo(setItem);
+                  },
+                  icon: const Icon(Icons.play_circle_fill, color: Colors.white),
+                  label: const Text('VER VIDEO DE LA SERIE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                )
+              else
+                const Text(
+                  'Esta serie no tiene video asociado.',
+                  style: TextStyle(color: Colors.white38),
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   // Ventana flotante para editar peso, reps o RPE
@@ -142,7 +247,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                       'rpe': newRpe,
                     }).eq('id', setItem['id']);
 
-                    if (mounted) Navigator.pop(context);
+                    if (context.mounted) Navigator.pop(context);
                     _fetchSets();
                   }
                 },
@@ -187,6 +292,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                       color: const Color(0xFF252525),
                       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                       child: ListTile(
+                        onTap: () => _showSetDetail(setItem),
                         title: Text(
                           exerciseName,
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -198,13 +304,19 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            if (setItem['video_url'] != null && (setItem['video_url'] as String).isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.play_circle_fill, color: Colors.cyanAccent),
+                                tooltip: 'Ver video',
+                                onPressed: () => _abrirVideo(setItem),
+                              ),
                             IconButton(
                               icon: const Icon(Icons.edit, color: Colors.blueAccent),
                               onPressed: () => _showEditDialog(setItem),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete, color: Colors.redAccent),
-                              onPressed: () => _deleteSet(setItem['id']),
+                              onPressed: () => _deleteSet(setItem),
                             ),
                           ],
                         ),
