@@ -839,20 +839,26 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
     final sensorTurns = isFront ? rawTurns : (4 - rawTurns) % 4;
     final rotated = sensorTurns % 2 == 1;
 
+    Widget preview = RotatedBox(
+      quarterTurns: sensorTurns,
+      child: SizedBox(
+        width: previewSize.width,
+        height: previewSize.height,
+        child: controller.buildPreview(),
+      ),
+    );
+
+    if (isFront) {
+      preview = Transform.flip(flipX: true, child: preview);
+    }
+
     return FittedBox(
       fit: BoxFit.cover,
       clipBehavior: Clip.hardEdge,
       child: SizedBox(
         width: rotated ? previewSize.height : previewSize.width,
         height: rotated ? previewSize.width : previewSize.height,
-        child: RotatedBox(
-          quarterTurns: sensorTurns,
-          child: SizedBox(
-            width: previewSize.width,
-            height: previewSize.height,
-            child: controller.buildPreview(),
-          ),
-        ),
+        child: preview,
       ),
     );
   }
