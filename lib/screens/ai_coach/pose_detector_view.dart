@@ -479,20 +479,31 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
     CameraLensDirection lensDirection,
   ) {
     final screenWidth = MediaQuery.of(context).size.width;
+    final imageWidth = Platform.isIOS ? imageSize.width : imageSize.height;
+    late final double mapped;
     switch (rotation) {
       case InputImageRotation.rotation90deg:
-        return lensDirection == CameraLensDirection.front
-            ? screenWidth - (x * screenWidth / (Platform.isIOS ? imageSize.width : imageSize.height))
-            : x * screenWidth / (Platform.isIOS ? imageSize.width : imageSize.height);
+        mapped = lensDirection == CameraLensDirection.front
+            ? screenWidth - (x * screenWidth / imageWidth)
+            : x * screenWidth / imageWidth;
       case InputImageRotation.rotation270deg:
-        return lensDirection == CameraLensDirection.front
-            ? x * screenWidth / (Platform.isIOS ? imageSize.width : imageSize.height)
-            : screenWidth - (x * screenWidth / (Platform.isIOS ? imageSize.width : imageSize.height));
+        mapped = lensDirection == CameraLensDirection.front
+            ? x * screenWidth / imageWidth
+            : screenWidth - (x * screenWidth / imageWidth);
       default:
-        return lensDirection == CameraLensDirection.front
+        mapped = lensDirection == CameraLensDirection.front
             ? screenWidth - (x * screenWidth / imageSize.width)
             : x * screenWidth / imageSize.width;
     }
+
+    // La preview frontal ya va espejada; movemos los puntos, no el canvas,
+    // para que el texto de los ángulos no quede al revés.
+    if (Platform.isAndroid &&
+        _isRecordingVideo &&
+        lensDirection == CameraLensDirection.front) {
+      return screenWidth - mapped;
+    }
+    return mapped;
   }
 
   double _traducirCoordenadaY(
@@ -863,17 +874,6 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
     );
   }
 
-  Widget? _overlayPose() {
-    final paint = _customPaint;
-    if (paint == null || _cameras.isEmpty) return paint;
-
-    final isFront = _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
-    if (Platform.isAndroid && _isRecordingVideo && isFront) {
-      return Transform.flip(flipX: true, child: paint);
-    }
-    return paint;
-  }
-
   Widget _buildCameraBody() {
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
       return Scaffold(
@@ -911,7 +911,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
           Positioned.fill(child: _buildVistaPreviaCamara()),
 
           // 2. Capa de dibujo de trazas del cuerpo y articulaciones
-          ?_overlayPose(),
+          ?_customPaint,
 
           // 3. Barra Superior
           Positioned(
