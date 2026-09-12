@@ -832,8 +832,11 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       return CameraPreview(controller);
     }
 
-    // CameraX entrega el frame al revés del sensor: giramos en el sentido contrario.
-    final sensorTurns = (4 - (_cameras[_cameraIndex].sensorOrientation ~/ 90)) % 4;
+    // Trasera: sentido contrario al sensor. Frontal: el del sensor (si no, queda al revés).
+    final cameraDesc = _cameras[_cameraIndex];
+    final rawTurns = (cameraDesc.sensorOrientation ~/ 90) % 4;
+    final isFront = cameraDesc.lensDirection == CameraLensDirection.front;
+    final sensorTurns = isFront ? rawTurns : (4 - rawTurns) % 4;
     final rotated = sensorTurns % 2 == 1;
 
     return FittedBox(
