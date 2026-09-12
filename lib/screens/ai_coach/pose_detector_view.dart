@@ -863,6 +863,17 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
     );
   }
 
+  Widget? _overlayPose() {
+    final paint = _customPaint;
+    if (paint == null || _cameras.isEmpty) return paint;
+
+    final isFront = _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
+    if (Platform.isAndroid && _isRecordingVideo && isFront) {
+      return Transform.flip(flipX: true, child: paint);
+    }
+    return paint;
+  }
+
   Widget _buildCameraBody() {
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
       return Scaffold(
@@ -900,7 +911,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
           Positioned.fill(child: _buildVistaPreviaCamara()),
 
           // 2. Capa de dibujo de trazas del cuerpo y articulaciones
-          ?_customPaint,
+          ?_overlayPose(),
 
           // 3. Barra Superior
           Positioned(
