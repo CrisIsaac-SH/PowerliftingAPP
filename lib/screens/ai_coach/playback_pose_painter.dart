@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
+import '../../utils/lift_rules.dart';
+import '../../utils/lift_visuals.dart';
 import '../../utils/pose_math_utils.dart';
 
 class PlaybackPosePainter extends CustomPainter {
@@ -89,43 +91,32 @@ class PlaybackPosePainter extends CustomPainter {
   void _dibujarTrazasEjercicio(Canvas canvas, Size size, Pose pose) {
     if (analysis == null || !analysis!.hasRequiredLandmarks) return;
 
-    final isRight = analysis!.side == PoseSide.right;
-    final ex = exercise.toUpperCase();
-    Color color = Colors.orangeAccent;
-    if (analysis!.isValidForm) {
-      color = Colors.greenAccent;
-    } else if (analysis!.primaryAngle < 125) {
-      color = Colors.amberAccent;
-    } else {
-      color = Colors.redAccent;
-    }
+    final lift = LiftThresholds.fromName(exercise);
+    final tone = LiftVisuals.tone(
+      lift: lift,
+      angle: analysis!.primaryAngle,
+      isValidForm: analysis!.isValidForm,
+    );
 
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6.5
       ..strokeCap = StrokeCap.round
-      ..color = color;
+      ..color = _colorDeTono(tone);
 
-    if (ex.contains('BENCH') || ex.contains('BANCA')) {
-      final s = isRight ? PoseLandmarkType.rightShoulder : PoseLandmarkType.leftShoulder;
-      final e = isRight ? PoseLandmarkType.rightElbow : PoseLandmarkType.leftElbow;
-      final w = isRight ? PoseLandmarkType.rightWrist : PoseLandmarkType.leftWrist;
-      _conectar(canvas, size, pose, s, e, paint);
-      _conectar(canvas, size, pose, e, w, paint);
-    } else if (ex.contains('DEADLIFT') || ex.contains('MUERTO')) {
-      final s = isRight ? PoseLandmarkType.rightShoulder : PoseLandmarkType.leftShoulder;
-      final h = isRight ? PoseLandmarkType.rightHip : PoseLandmarkType.leftHip;
-      final k = isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee;
-      final a = isRight ? PoseLandmarkType.rightAnkle : PoseLandmarkType.leftAnkle;
-      _conectar(canvas, size, pose, s, h, paint);
-      _conectar(canvas, size, pose, h, k, paint);
-      _conectar(canvas, size, pose, k, a, paint);
-    } else {
-      final h = isRight ? PoseLandmarkType.rightHip : PoseLandmarkType.leftHip;
-      final k = isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee;
-      final a = isRight ? PoseLandmarkType.rightAnkle : PoseLandmarkType.leftAnkle;
-      _conectar(canvas, size, pose, h, k, paint);
-      _conectar(canvas, size, pose, k, a, paint);
+    for (final link in LiftVisuals.activeLinks(lift, analysis!.side)) {
+      _conectar(canvas, size, pose, link.$1, link.$2, paint);
+    }
+  }
+
+  Color _colorDeTono(LiftTraceTone tone) {
+    switch (tone) {
+      case LiftTraceTone.valid:
+        return Colors.greenAccent;
+      case LiftTraceTone.inRange:
+        return Colors.amberAccent;
+      case LiftTraceTone.extended:
+        return Colors.redAccent;
     }
   }
 
@@ -150,11 +141,10 @@ class PlaybackPosePainter extends CustomPainter {
   void _dibujarEtiqueta(Canvas canvas, Size size, Pose pose) {
     if (analysis == null || !analysis!.hasRequiredLandmarks) return;
 
-    final isRight = analysis!.side == PoseSide.right;
-    final ex = exercise.toUpperCase();
-    final type = (ex.contains('BENCH') || ex.contains('BANCA'))
-        ? (isRight ? PoseLandmarkType.rightElbow : PoseLandmarkType.leftElbow)
-        : (isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee);
+    final type = LiftVisuals.labelJoint(
+      LiftThresholds.fromName(exercise),
+      analysis!.side,
+    );
 
     final landmark = pose.landmarks[type];
     if (landmark == null || landmark.likelihood < 0.45) return;

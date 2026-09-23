@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'pose_painter.dart';
+import '../../utils/lift_rules.dart';
 import '../../utils/pose_math_utils.dart';
+import '../../utils/rep_counter.dart';
 
 class PoseDetectorView extends StatefulWidget {
   final String exercise;
@@ -47,12 +49,9 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
   final List<Offset> _trajectoryPoints = [];
 
   // Contador de repeticiones y biomecánica
+  final RepCounter _repCounter = RepCounter();
   int _repsContadas = 0;
   int _repsValidas = 0;
-  bool _enFaseDescenso = false;
-  bool _alcanzoProfundidad = false;
-  int _framesEnProfundidad = 0;
-  DateTime? _tiempoInicioRep;
   double _mejorAngulo = 999.0;
   double _anguloActual = 0.0;
 
@@ -387,89 +386,19 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
   }
 
   void _actualizarContadorReps(ExercisePoseAnalysis analisis) {
-    final angle = analisis.primaryAngle;
-    final ex = widget.exercise.toUpperCase();
-    final now = DateTime.now();
-
-    if (ex.contains('BENCH') || ex.contains('BANCA')) {
-      // PRESS DE BANCA
-      if (angle < _mejorAngulo) _mejorAngulo = angle;
-
-      if (angle < 120 && !_enFaseDescenso) {
-        _enFaseDescenso = true;
-        _tiempoInicioRep = now;
-        _framesEnProfundidad = 0;
-      }
-      if (_enFaseDescenso && angle <= 92) {
-        _framesEnProfundidad++;
-        if (_framesEnProfundidad >= 2) {
-          _alcanzoProfundidad = true;
-        }
-      }
-      if (_enFaseDescenso && angle >= 150) {
-        final duracion = _tiempoInicioRep != null
-            ? now.difference(_tiempoInicioRep!).inMilliseconds
-            : 1000;
-
-        // Debounce: repetición debe durar al menos 900ms para evitar micro-movimientos
-        if (duracion >= 900) {
-          _repsContadas++;
-          if (_alcanzoProfundidad) _repsValidas++;
-        }
-        _enFaseDescenso = false;
-        _alcanzoProfundidad = false;
-        _framesEnProfundidad = 0;
-      }
-    } else if (ex.contains('DEADLIFT') || ex.contains('MUERTO')) {
-      // PESO MUERTO
-      if (angle < 120 && !_enFaseDescenso) {
-        _enFaseDescenso = true;
-        _tiempoInicioRep = now;
-      }
-      if (_enFaseDescenso && analisis.isValidForm) {
-        _alcanzoProfundidad = true;
-      }
-      if (_enFaseDescenso && _alcanzoProfundidad && angle < 120) {
-        final duracion = _tiempoInicioRep != null
-            ? now.difference(_tiempoInicioRep!).inMilliseconds
-            : 1000;
-
-        if (duracion >= 900) {
-          _repsContadas++;
-          _repsValidas++;
-        }
-        _enFaseDescenso = false;
-        _alcanzoProfundidad = false;
-      }
-    } else {
-      // SENTADILLA (SQUAT)
-      if (angle < _mejorAngulo) _mejorAngulo = angle;
-
-      if (angle < 128 && !_enFaseDescenso) {
-        _enFaseDescenso = true;
-        _tiempoInicioRep = now;
-        _framesEnProfundidad = 0;
-      }
-      if (_enFaseDescenso && angle <= 88) {
-        _framesEnProfundidad++;
-        if (_framesEnProfundidad >= 2) {
-          _alcanzoProfundidad = true;
-        }
-      }
-      if (_enFaseDescenso && angle >= 148) {
-        final duracion = _tiempoInicioRep != null
-            ? now.difference(_tiempoInicioRep!).inMilliseconds
-            : 1000;
-
-        if (duracion >= 900) {
-          _repsContadas++;
-          if (_alcanzoProfundidad) _repsValidas++;
-        }
-        _enFaseDescenso = false;
-        _alcanzoProfundidad = false;
-        _framesEnProfundidad = 0;
-      }
+    final lift = LiftThresholds.fromName(widget.exercise);
+    if (lift != LiftType.deadlift && analisis.primaryAngle < _mejorAngulo) {
+      _mejorAngulo = analisis.primaryAngle;
     }
+
+    _repCounter.update(
+      lift: lift,
+      angle: analisis.primaryAngle,
+      isValidForm: analisis.isValidForm,
+      timeMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    _repsContadas = _repCounter.reps;
+    _repsValidas = _repCounter.validReps;
   }
 
   double _traducirCoordenadaX(
@@ -1109,6 +1038,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
                       IconButton(
                         onPressed: () {
                           setState(() {
+                            _repCounter.reset();
                             _repsContadas = 0;
                             _repsValidas = 0;
                             _mejorAngulo = 999.0;

@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../utils/lift_rules.dart';
 import '../utils/pose_math_utils.dart';
+import '../utils/rep_counter.dart';
 import 'video_frame_extractor.dart';
 
 class PosePlaybackFrame {
@@ -81,7 +83,7 @@ class VideoPoseAnalyzer {
       options: PoseDetectorOptions(mode: PoseDetectionMode.single),
     );
     final tempDir = await getTemporaryDirectory();
-    final counter = _PlaybackRepCounter();
+    final counter = RepCounter();
     PoseSide? lockedSide;
     final trajectory = <Offset>[];
 
@@ -148,7 +150,12 @@ class VideoPoseAnalyzer {
           );
           if (analysis.hasRequiredLandmarks) {
             lockedSide ??= analysis.side;
-            counter.update(analysis, timeMs, exercise);
+            counter.update(
+              lift: LiftThresholds.fromName(exercise),
+              angle: analysis.primaryAngle,
+              isValidForm: analysis.isValidForm,
+              timeMs: timeMs,
+            );
             final track = analysis.trackingLandmark;
             if (track != null && track.likelihood > 0.40) {
               final point = Offset(track.x, track.y);
@@ -175,71 +182,6 @@ class VideoPoseAnalyzer {
       }
     } finally {
       await detector.close();
-    }
-  }
-}
-
-class _PlaybackRepCounter {
-  int reps = 0;
-  int validReps = 0;
-  bool descending = false;
-  bool reachedDepth = false;
-  int depthFrames = 0;
-  int? startMs;
-
-  void update(ExercisePoseAnalysis analysis, int timeMs, String exercise) {
-    final angle = analysis.primaryAngle;
-    final ex = exercise.toUpperCase();
-
-    bool startDescent(double threshold) {
-      if (angle < threshold && !descending) {
-        descending = true;
-        startMs = timeMs;
-        depthFrames = 0;
-        return true;
-      }
-      return false;
-    }
-
-    void finishRep(double lockoutAngle, {required bool requireDepth}) {
-      if (descending && angle >= lockoutAngle) {
-        final duration = startMs != null ? timeMs - startMs! : 1000;
-        if (duration >= 700) {
-          reps++;
-          if (!requireDepth || reachedDepth) validReps++;
-        }
-        descending = false;
-        reachedDepth = false;
-        depthFrames = 0;
-      }
-    }
-
-    if (ex.contains('BENCH') || ex.contains('BANCA')) {
-      startDescent(120);
-      if (descending && angle <= 92) {
-        depthFrames++;
-        if (depthFrames >= 2) reachedDepth = true;
-      }
-      finishRep(150, requireDepth: true);
-    } else if (ex.contains('DEADLIFT') || ex.contains('MUERTO')) {
-      startDescent(120);
-      if (descending && analysis.isValidForm) reachedDepth = true;
-      if (descending && reachedDepth && angle < 120) {
-        final duration = startMs != null ? timeMs - startMs! : 1000;
-        if (duration >= 700) {
-          reps++;
-          validReps++;
-        }
-        descending = false;
-        reachedDepth = false;
-      }
-    } else {
-      startDescent(128);
-      if (descending && angle <= 88) {
-        depthFrames++;
-        if (depthFrames >= 2) reachedDepth = true;
-      }
-      finishRep(148, requireDepth: true);
     }
   }
 }

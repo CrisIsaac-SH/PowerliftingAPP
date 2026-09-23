@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import '../../utils/lift_rules.dart';
+import '../../utils/lift_visuals.dart';
 import '../../utils/pose_math_utils.dart';
 
 class PosePainter extends CustomPainter {
@@ -110,48 +112,32 @@ class PosePainter extends CustomPainter {
   void _dibujarTrazasEjercicio(Canvas canvas, Size size, Pose pose) {
     if (analysis == null || !analysis!.hasRequiredLandmarks) return;
 
-    final isRight = analysis!.side == PoseSide.right;
-    final ex = exercise.toUpperCase();
-
-    // Color dinámico según la técnica
-    Color colorTraza = Colors.orangeAccent;
-    if (analysis!.isValidForm) {
-      colorTraza = Colors.greenAccent;
-    } else if (analysis!.primaryAngle < 125) {
-      colorTraza = Colors.amberAccent;
-    } else {
-      colorTraza = Colors.redAccent;
-    }
+    final lift = LiftThresholds.fromName(exercise);
+    final tone = LiftVisuals.tone(
+      lift: lift,
+      angle: analysis!.primaryAngle,
+      isValidForm: analysis!.isValidForm,
+    );
 
     final activePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6.5
       ..strokeCap = StrokeCap.round
-      ..color = colorTraza;
+      ..color = _colorDeTono(tone);
 
-    if (ex.contains('BENCH') || ex.contains('BANCA')) {
-      // Trazas activas para PRESS DE BANCA: Hombro -> Codo -> Muñeca
-      final s = isRight ? PoseLandmarkType.rightShoulder : PoseLandmarkType.leftShoulder;
-      final e = isRight ? PoseLandmarkType.rightElbow : PoseLandmarkType.leftElbow;
-      final w = isRight ? PoseLandmarkType.rightWrist : PoseLandmarkType.leftWrist;
-      _conectar(canvas, size, pose, s, e, activePaint);
-      _conectar(canvas, size, pose, e, w, activePaint);
-    } else if (ex.contains('DEADLIFT') || ex.contains('MUERTO')) {
-      // Trazas activas para PESO MUERTO: Hombro -> Cadera -> Rodilla -> Tobillo
-      final s = isRight ? PoseLandmarkType.rightShoulder : PoseLandmarkType.leftShoulder;
-      final h = isRight ? PoseLandmarkType.rightHip : PoseLandmarkType.leftHip;
-      final k = isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee;
-      final a = isRight ? PoseLandmarkType.rightAnkle : PoseLandmarkType.leftAnkle;
-      _conectar(canvas, size, pose, s, h, activePaint);
-      _conectar(canvas, size, pose, h, k, activePaint);
-      _conectar(canvas, size, pose, k, a, activePaint);
-    } else {
-      // Trazas activas para SQUAT: Cadera -> Rodilla -> Tobillo
-      final h = isRight ? PoseLandmarkType.rightHip : PoseLandmarkType.leftHip;
-      final k = isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee;
-      final a = isRight ? PoseLandmarkType.rightAnkle : PoseLandmarkType.leftAnkle;
-      _conectar(canvas, size, pose, h, k, activePaint);
-      _conectar(canvas, size, pose, k, a, activePaint);
+    for (final link in LiftVisuals.activeLinks(lift, analysis!.side)) {
+      _conectar(canvas, size, pose, link.$1, link.$2, activePaint);
+    }
+  }
+
+  Color _colorDeTono(LiftTraceTone tone) {
+    switch (tone) {
+      case LiftTraceTone.valid:
+        return Colors.greenAccent;
+      case LiftTraceTone.inRange:
+        return Colors.amberAccent;
+      case LiftTraceTone.extended:
+        return Colors.redAccent;
     }
   }
 
@@ -177,16 +163,10 @@ class PosePainter extends CustomPainter {
   void _dibujarEtiquetaAngulo(Canvas canvas, Size size, Pose pose) {
     if (analysis == null || !analysis!.hasRequiredLandmarks) return;
 
-    final isRight = analysis!.side == PoseSide.right;
-    final ex = exercise.toUpperCase();
-
-    // Determinamos qué articulación debe llevar la etiqueta
-    PoseLandmarkType typeClave;
-    if (ex.contains('BENCH') || ex.contains('BANCA')) {
-      typeClave = isRight ? PoseLandmarkType.rightElbow : PoseLandmarkType.leftElbow;
-    } else {
-      typeClave = isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee;
-    }
+    final typeClave = LiftVisuals.labelJoint(
+      LiftThresholds.fromName(exercise),
+      analysis!.side,
+    );
 
     final landmarkClave = pose.landmarks[typeClave];
     if (landmarkClave == null || landmarkClave.likelihood < 0.45) return;

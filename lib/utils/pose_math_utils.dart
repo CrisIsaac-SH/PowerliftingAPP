@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
+import 'lift_rules.dart';
+
 enum PoseSide { left, right }
 
 class ExercisePoseAnalysis {
@@ -76,8 +78,6 @@ class PoseMathUtils {
   /// Determina automáticamente qué lado del cuerpo (izquierdo o derecho)
   /// está más visible para la cámara según la probabilidad (likelihood) de los puntos.
   static PoseSide obtenerLadoMasVisible(Pose pose, String ejercicio) {
-    final normalizado = ejercicio.toUpperCase();
-
     final rHip = pose.landmarks[PoseLandmarkType.rightHip];
     final lHip = pose.landmarks[PoseLandmarkType.leftHip];
     final rKnee = pose.landmarks[PoseLandmarkType.rightKnee];
@@ -90,7 +90,7 @@ class PoseMathUtils {
     double confDerecha = 0.0;
     double confIzquierda = 0.0;
 
-    if (normalizado.contains('BENCH') || normalizado.contains('BANCA')) {
+    if (LiftThresholds.fromName(ejercicio) == LiftType.bench) {
       confDerecha = (rShoulder?.likelihood ?? 0) + (rElbow?.likelihood ?? 0);
       confIzquierda = (lShoulder?.likelihood ?? 0) + (lElbow?.likelihood ?? 0);
     } else {
@@ -108,16 +108,15 @@ class PoseMathUtils {
     String ejercicio, {
     PoseSide? ladoBloqueado,
   }) {
-    final normalizado = ejercicio.toUpperCase();
     final side = ladoBloqueado ?? obtenerLadoMasVisible(pose, ejercicio);
 
-    if (normalizado.contains('BENCH') || normalizado.contains('BANCA')) {
-      return _analizarBenchPress(pose, side);
-    } else if (normalizado.contains('DEADLIFT') || normalizado.contains('MUERTO')) {
-      return _analizarDeadlift(pose, side);
-    } else {
-      // Por defecto SQUAT (Sentadilla)
-      return _analizarSquat(pose, side);
+    switch (LiftThresholds.fromName(ejercicio)) {
+      case LiftType.bench:
+        return _analizarBenchPress(pose, side);
+      case LiftType.deadlift:
+        return _analizarDeadlift(pose, side);
+      case LiftType.squat:
+        return _analizarSquat(pose, side);
     }
   }
 
