@@ -6,8 +6,25 @@ void main() {
   void feed(
     RepCounter counter,
     LiftType lift,
-    List<({int t, double angle, bool valid})> frames,
-  ) {
+    List<({int t, double angle, bool valid})> frames, {
+    bool preparado = false,
+  }) {
+    if (preparado && frames.isNotEmpty) {
+      final setupAngle = lift == LiftType.deadlift ? 90.0 : 170.0;
+      final inicio = frames.first.t - LiftThresholds.setupHoldMs - 100;
+      counter.update(
+        lift: lift,
+        angle: setupAngle,
+        isValidForm: false,
+        timeMs: inicio,
+      );
+      counter.update(
+        lift: lift,
+        angle: setupAngle,
+        isValidForm: false,
+        timeMs: inicio + LiftThresholds.setupHoldMs,
+      );
+    }
     for (final frame in frames) {
       counter.update(
         lift: lift,
@@ -42,7 +59,7 @@ void main() {
         (t: 250, angle: 80, valid: true),
         (t: 400, angle: 75, valid: true),
         (t: 1200, angle: 160, valid: false),
-      ]);
+      ], preparado: true);
 
       expect(counter.reps, 1);
       expect(counter.validReps, 1);
@@ -55,7 +72,7 @@ void main() {
         (t: 0, angle: 110, valid: false),
         (t: 400, angle: 100, valid: false),
         (t: 1100, angle: 165, valid: false),
-      ]);
+      ], preparado: true);
 
       expect(counter.reps, 1);
       expect(counter.validReps, 0);
@@ -68,7 +85,7 @@ void main() {
         (t: 40, angle: 70, valid: true),
         (t: 80, angle: 70, valid: true),
         (t: 200, angle: 170, valid: false),
-      ]);
+      ], preparado: true);
 
       expect(counter.reps, 0);
       expect(counter.validReps, 0);
@@ -82,7 +99,7 @@ void main() {
         (t: 200, angle: 70, valid: true),
         (t: 400, angle: 70, valid: true),
         (t: 2000, angle: 100, valid: false),
-      ]);
+      ], preparado: true);
 
       expect(counter.reps, 0);
       expect(counter.inRep, isTrue);
@@ -99,7 +116,7 @@ void main() {
         (t: 1500, angle: 70, valid: true),
         (t: 1650, angle: 70, valid: true),
         (t: 2500, angle: 160, valid: false),
-      ]);
+      ], preparado: true);
 
       expect(counter.reps, 2);
       expect(counter.validReps, 2);
@@ -113,7 +130,7 @@ void main() {
         (t: 0, angle: 100, valid: false),
         (t: 200, angle: 90, valid: true),
         (t: 1200, angle: 160, valid: false),
-      ]);
+      ], preparado: true);
 
       expect(counter.reps, 1);
       expect(counter.validReps, 0);
@@ -137,7 +154,7 @@ void main() {
         (t: 0, angle: 100, valid: false),
         (t: 400, angle: 170, valid: true),
         (t: 1500, angle: 100, valid: false),
-      ]);
+      ], preparado: true);
 
       expect(counter.reps, 1);
       expect(counter.validReps, 1);
@@ -149,7 +166,7 @@ void main() {
         (t: 0, angle: 90, valid: false),
         (t: 800, angle: 140, valid: false),
         (t: 2000, angle: 90, valid: false),
-      ]);
+      ], preparado: true);
 
       expect(counter.reps, 0);
       expect(counter.inRep, isTrue);
@@ -165,7 +182,7 @@ void main() {
         (t: 400, angle: 70, valid: true),
         (t: 1400, angle: 160, valid: false),
         (t: 1600, angle: 100, valid: false),
-      ]);
+      ], preparado: true);
 
       expect(counter.reps, 1);
       expect(counter.inRep, isTrue);
@@ -185,7 +202,7 @@ void main() {
         (t: 0, angle: 100, valid: false),
         (t: 200, angle: 70, valid: true),
         (t: 400, angle: 70, valid: true),
-      ]);
+      ], preparado: true);
       counter.markMissing(700);
       feed(counter, LiftType.squat, [
         (t: 1100, angle: 160, valid: false),
@@ -201,7 +218,7 @@ void main() {
         (t: 0, angle: 100, valid: false),
         (t: 200, angle: 70, valid: true),
         (t: 400, angle: 70, valid: true),
-      ]);
+      ], preparado: true);
       counter.markMissing(600);
       counter.markMissing(1900);
 
@@ -225,7 +242,7 @@ void main() {
         (t: 4000, angle: 90, valid: true),
         (t: 5000, angle: 100, valid: false),
         (t: 6000, angle: 110, valid: false),
-      ]);
+      ], preparado: true);
 
       expect(counter.reps, 0);
       expect(counter.inRep, isFalse);
@@ -238,9 +255,110 @@ void main() {
         (t: 400, angle: 70, valid: true),
         (t: 800, angle: 70, valid: true),
         (t: 1000, angle: 80, valid: true),
-      ]);
+      ], preparado: true);
       feed(counter, LiftType.squat, [
         (t: 8000, angle: 160, valid: false),
+      ]);
+
+      expect(counter.reps, 1);
+      expect(counter.validReps, 1);
+    });
+  });
+
+  group('RepCounter posición inicial quieta', () {
+    test('bajar sin quedarse arriba no abre la sentadilla', () {
+      final counter = RepCounter();
+      feed(counter, LiftType.squat, [
+        (t: 0, angle: 170, valid: false),
+        (t: 150, angle: 140, valid: false),
+        (t: 300, angle: 90, valid: false),
+        (t: 500, angle: 70, valid: true),
+        (t: 700, angle: 70, valid: true),
+        (t: 1600, angle: 165, valid: false),
+      ]);
+
+      expect(counter.reps, 0);
+      expect(counter.inRep, isFalse);
+    });
+
+    test('quedarse quieto arriba permite abrir la sentadilla', () {
+      final counter = RepCounter();
+      feed(counter, LiftType.squat, [
+        (t: 0, angle: 168, valid: false),
+        (t: 500, angle: 172, valid: false),
+        (t: 700, angle: 100, valid: false),
+        (t: 900, angle: 70, valid: true),
+        (t: 1050, angle: 70, valid: true),
+        (t: 1800, angle: 165, valid: false),
+      ]);
+
+      expect(counter.reps, 1);
+      expect(counter.validReps, 1);
+    });
+
+    test('si el ángulo se mueve mucho, la espera vuelve a empezar', () {
+      final counter = RepCounter();
+      feed(counter, LiftType.squat, [
+        (t: 0, angle: 170, valid: false),
+        (t: 200, angle: 150, valid: false),
+        (t: 400, angle: 100, valid: false),
+        (t: 1400, angle: 165, valid: false),
+      ]);
+
+      expect(counter.reps, 0);
+      expect(counter.inRep, isFalse);
+    });
+
+    test('pasar rápido por el suelo no abre el peso muerto', () {
+      final counter = RepCounter();
+      feed(counter, LiftType.deadlift, [
+        (t: 0, angle: 90, valid: false),
+        (t: 200, angle: 170, valid: true),
+        (t: 1500, angle: 90, valid: false),
+      ]);
+
+      expect(counter.reps, 0);
+      expect(counter.inRep, isFalse);
+    });
+
+    test('una pausa durante la espera no la da por cumplida', () {
+      final counter = RepCounter();
+      feed(counter, LiftType.squat, [
+        (t: 0, angle: 170, valid: false),
+        (t: 2000, angle: 170, valid: false),
+        (t: 2300, angle: 100, valid: false),
+        (t: 2500, angle: 70, valid: true),
+        (t: 2700, angle: 70, valid: true),
+        (t: 3600, angle: 165, valid: false),
+      ]);
+
+      expect(counter.reps, 0);
+      expect(counter.inRep, isFalse);
+    });
+
+    test('tras perder la cadena hay que quietarse otra vez', () {
+      final counter = RepCounter();
+      feed(counter, LiftType.squat, [
+        (t: 0, angle: 100, valid: false),
+        (t: 200, angle: 70, valid: true),
+      ], preparado: true);
+      counter.markMissing(400);
+      counter.markMissing(1700);
+      feed(counter, LiftType.squat, [
+        (t: 1900, angle: 100, valid: false),
+        (t: 2100, angle: 70, valid: true),
+        (t: 2300, angle: 70, valid: true),
+        (t: 3200, angle: 165, valid: false),
+      ]);
+
+      expect(counter.reps, 0);
+
+      feed(counter, LiftType.squat, [
+        (t: 3700, angle: 168, valid: false),
+        (t: 3900, angle: 100, valid: false),
+        (t: 4100, angle: 70, valid: true),
+        (t: 4300, angle: 70, valid: true),
+        (t: 5100, angle: 165, valid: false),
       ]);
 
       expect(counter.reps, 1);

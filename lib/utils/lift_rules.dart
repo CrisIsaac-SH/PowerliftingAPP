@@ -31,6 +31,12 @@ class LiftThresholds {
   /// Velocidad angular máxima creíble. Un frame que la supera se ignora.
   static const double maxAngularSpeedDegPerSec = 360;
 
+  /// Tiempo quieto en la posición inicial antes de poder abrir una repetición.
+  static const int setupHoldMs = 500;
+
+  /// Movimiento máximo, en grados, mientras se espera esa posición quieta.
+  static const double setupJitterDegrees = 12;
+
   static const double squatStart = 128;
   static const double squatDepth = 88;
   static const double squatLockout = 148;
