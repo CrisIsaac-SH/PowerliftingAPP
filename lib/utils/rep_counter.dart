@@ -13,6 +13,8 @@ class RepCounter {
   bool _reachedDepth = false;
   int _depthFrames = 0;
   int? _startMs;
+  int? _lastTickMs;
+  int? _missingSinceMs;
 
   bool get inRep => _inRep;
 
@@ -23,6 +25,21 @@ class RepCounter {
     _reachedDepth = false;
     _depthFrames = 0;
     _startMs = null;
+    _lastTickMs = null;
+    _missingSinceMs = null;
+  }
+
+  /// Avisa que este frame no tiene la cadena del ejercicio.
+  /// Si la ausencia se alarga, cancela la repetición abierta sin contarla.
+  void markMissing(int timeMs) {
+    _syncClock(timeMs);
+    if (!_inRep) return;
+
+    _missingSinceMs ??= timeMs;
+    final missingFor = timeMs - _missingSinceMs!;
+    if (missingFor >= LiftThresholds.lostTrackingMs || _openTooLong(timeMs)) {
+      _clearPhase();
+    }
   }
 
   void update({
@@ -31,6 +48,10 @@ class RepCounter {
     required bool isValidForm,
     required int timeMs,
   }) {
+    _syncClock(timeMs);
+    _missingSinceMs = null;
+    if (_abandonIfOpenTooLong(timeMs)) return;
+
     switch (lift) {
       case LiftType.bench:
         _updateEccentric(
@@ -107,10 +128,37 @@ class RepCounter {
     }
   }
 
+  void _syncClock(int timeMs) {
+    final previous = _lastTickMs;
+    if (previous != null && _inRep && _startMs != null) {
+      final gap = timeMs - previous;
+      if (gap > LiftThresholds.clockGapMs) {
+        _startMs = _startMs! + gap;
+        if (_missingSinceMs != null) {
+          _missingSinceMs = _missingSinceMs! + gap;
+        }
+      }
+    }
+    _lastTickMs = timeMs;
+  }
+
+  bool _openTooLong(int timeMs) {
+    final start = _startMs;
+    if (!_inRep || start == null) return false;
+    return timeMs - start >= LiftThresholds.maxRepDurationMs;
+  }
+
+  bool _abandonIfOpenTooLong(int timeMs) {
+    if (!_openTooLong(timeMs)) return false;
+    _clearPhase();
+    return true;
+  }
+
   void _clearPhase() {
     _inRep = false;
     _reachedDepth = false;
     _depthFrames = 0;
     _startMs = null;
+    _missingSinceMs = null;
   }
 }

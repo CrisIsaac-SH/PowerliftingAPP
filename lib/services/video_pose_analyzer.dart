@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../utils/angle_sample_gate.dart';
 import '../utils/lift_rules.dart';
+import '../utils/pose_identity_tracker.dart';
 import '../utils/pose_math_utils.dart';
 import '../utils/rep_counter.dart';
 import 'video_frame_extractor.dart';
@@ -84,6 +86,8 @@ class VideoPoseAnalyzer {
     );
     final tempDir = await getTemporaryDirectory();
     final counter = RepCounter();
+    final angleGate = AngleSampleGate();
+    final identity = PoseIdentityTracker();
     PoseSide? lockedSide;
     final trajectory = <Offset>[];
 
@@ -103,6 +107,7 @@ class VideoPoseAnalyzer {
           maxHeight: 640,
         );
         if (bytes == null || bytes.isEmpty) {
+          counter.markMissing(timeMs);
           onFrame(
             PosePlaybackFrame(
               timeMs: timeMs,
@@ -142,35 +147,44 @@ class VideoPoseAnalyzer {
         }
 
         ExercisePoseAnalysis? analysis;
+        final trackedPoses = <Pose>[];
         if (poses.isNotEmpty) {
+          final posePrincipal = identity.select(poses);
+          trackedPoses.add(posePrincipal);
           analysis = PoseMathUtils.analizarPoseParaEjercicio(
-            poses.first,
+            posePrincipal,
             exercise,
             ladoBloqueado: lockedSide,
           );
           if (analysis.hasRequiredLandmarks) {
-            lockedSide ??= analysis.side;
-            counter.update(
-              lift: LiftThresholds.fromName(exercise),
-              angle: analysis.primaryAngle,
-              isValidForm: analysis.isValidForm,
-              timeMs: timeMs,
-            );
-            final track = analysis.trackingLandmark;
-            if (track != null && track.likelihood >= LiftThresholds.minLandmarkConfidence) {
-              final point = Offset(track.x, track.y);
-              if (trajectory.isEmpty || (trajectory.last - point).distance >= 6) {
-                trajectory.add(point);
-                if (trajectory.length > 40) trajectory.removeAt(0);
+            if (angleGate.accept(analysis.primaryAngle, timeMs)) {
+              lockedSide ??= analysis.side;
+              counter.update(
+                lift: LiftThresholds.fromName(exercise),
+                angle: analysis.primaryAngle,
+                isValidForm: analysis.isValidForm,
+                timeMs: timeMs,
+              );
+              final track = analysis.trackingLandmark;
+              if (track != null && track.likelihood >= LiftThresholds.minLandmarkConfidence) {
+                final point = Offset(track.x, track.y);
+                if (trajectory.isEmpty || (trajectory.last - point).distance >= 6) {
+                  trajectory.add(point);
+                  if (trajectory.length > 40) trajectory.removeAt(0);
+                }
               }
             }
+          } else {
+            counter.markMissing(timeMs);
           }
+        } else {
+          counter.markMissing(timeMs);
         }
 
         onFrame(
           PosePlaybackFrame(
             timeMs: timeMs,
-            poses: poses,
+            poses: trackedPoses,
             imageSize: imageSize,
             analysis: analysis,
             trajectory: List.from(trajectory),

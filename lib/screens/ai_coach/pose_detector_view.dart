@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'pose_painter.dart';
+import '../../utils/angle_sample_gate.dart';
 import '../../utils/lift_rules.dart';
+import '../../utils/pose_identity_tracker.dart';
 import '../../utils/pose_math_utils.dart';
 import '../../utils/rep_counter.dart';
 
@@ -51,6 +53,8 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
 
   // Contador de repeticiones y biomecánica
   final RepCounter _repCounter = RepCounter();
+  final AngleSampleGate _angleGate = AngleSampleGate();
+  final PoseIdentityTracker _poseTracker = PoseIdentityTracker();
   int _repsContadas = 0;
   int _repsValidas = 0;
   double _mejorAngulo = 999.0;
@@ -237,6 +241,8 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       _lockedSide = null;
       _smoothedOffsets.clear();
       _smoothedAngle = 0.0;
+      _angleGate.reset();
+      _poseTracker.reset();
     });
 
     await _liberarCamara();
@@ -341,7 +347,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       if (!mounted) return;
 
       if (poses.isNotEmpty) {
-        final posePrincipal = poses.first;
+        final posePrincipal = _poseTracker.select(poses);
         final imageSize = inputImage.metadata!.size;
         final rotation = inputImage.metadata!.rotation;
         final lensDir = camera.lensDirection;
@@ -353,13 +359,19 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
           ladoBloqueado: _isLocked ? _lockedSide : null,
         );
 
-        // Suavizado temporal del ángulo para eliminar micro-fluctuaciones
-        final factorSuavizadoAngulo = _isLocked ? 0.35 : 0.50;
-        _smoothedAngle = PoseMathUtils.suavizarValor(
-          analisisCrudo.primaryAngle,
-          _smoothedAngle,
-          factorSuavizadoAngulo,
-        );
+        // Un salto imposible no entra al suavizado ni al contador.
+        final ahoraMs = DateTime.now().millisecondsSinceEpoch;
+        final anguloConfiable = !analisisCrudo.hasRequiredLandmarks ||
+            _angleGate.accept(analisisCrudo.primaryAngle, ahoraMs);
+
+        if (anguloConfiable) {
+          final factorSuavizadoAngulo = _isLocked ? 0.35 : 0.50;
+          _smoothedAngle = PoseMathUtils.suavizarValor(
+            analisisCrudo.primaryAngle,
+            _smoothedAngle,
+            factorSuavizadoAngulo,
+          );
+        }
 
         final lift = LiftThresholds.fromName(widget.exercise);
         final cuerpoVisible = analisisCrudo.hasRequiredLandmarks;
@@ -394,6 +406,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
 
         // Suavizado temporal de las coordenadas de cada articulación (Anti-Jitter)
         final factorCoords = _isLocked ? 0.40 : 0.65;
+        if (anguloConfiable) {
         posePrincipal.landmarks.forEach((type, landmark) {
           if (landmark.likelihood >= LiftThresholds.minLandmarkConfidence) {
             final rawX = _traducirCoordenadaX(landmark.x, imageSize, rotation, lensDir);
@@ -410,9 +423,10 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
             }
           }
         });
+        }
 
         // El esqueleto se ve en la previa. Reps y trayectoria solo mientras se graba.
-        if (analisis.hasRequiredLandmarks && _grabandoActivo) {
+        if (_grabandoActivo && analisis.hasRequiredLandmarks && anguloConfiable) {
           _actualizarContadorReps(analisis);
 
           // Registrar punto para la traza del movimiento (Bar Path con Noise Gate)
@@ -431,11 +445,15 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
               }
             }
           }
+        } else if (_grabandoActivo) {
+          _repCounter.markMissing(DateTime.now().millisecondsSinceEpoch);
+          _repsContadas = _repCounter.reps;
+          _repsValidas = _repCounter.validReps;
         }
 
         _customPaint = CustomPaint(
           painter: PosePainter(
-            poses: poses,
+            poses: [posePrincipal],
             absoluteImageSize: inputImage.metadata!.size,
             rotation: inputImage.metadata!.rotation,
             lensDirection: camera.lensDirection,
@@ -450,6 +468,11 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       } else {
         _cuerpoDetectado = false;
         _customPaint = null;
+        if (_grabandoActivo) {
+          _repCounter.markMissing(DateTime.now().millisecondsSinceEpoch);
+          _repsContadas = _repCounter.reps;
+          _repsValidas = _repCounter.validReps;
+        }
       }
 
       setState(() {});
@@ -1143,6 +1166,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
                         onPressed: () {
                           setState(() {
                             _repCounter.reset();
+                            _angleGate.reset();
                             _repsContadas = 0;
                             _repsValidas = 0;
                             _mejorAngulo = 999.0;

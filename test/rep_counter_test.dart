@@ -177,4 +177,74 @@ void main() {
       expect(counter.inRep, isFalse);
     });
   });
+
+  group('RepCounter repetición abierta', () {
+    test('un parpadeo corto de la cadena no cancela la sentadilla', () {
+      final counter = RepCounter();
+      feed(counter, LiftType.squat, [
+        (t: 0, angle: 100, valid: false),
+        (t: 200, angle: 70, valid: true),
+        (t: 400, angle: 70, valid: true),
+      ]);
+      counter.markMissing(700);
+      feed(counter, LiftType.squat, [
+        (t: 1100, angle: 160, valid: false),
+      ]);
+
+      expect(counter.reps, 1);
+      expect(counter.validReps, 1);
+    });
+
+    test('si la cadena falta 1.2 s, un cierre posterior no cuenta esa rep', () {
+      final counter = RepCounter();
+      feed(counter, LiftType.squat, [
+        (t: 0, angle: 100, valid: false),
+        (t: 200, angle: 70, valid: true),
+        (t: 400, angle: 70, valid: true),
+      ]);
+      counter.markMissing(600);
+      counter.markMissing(1900);
+
+      expect(counter.inRep, isFalse);
+
+      feed(counter, LiftType.squat, [
+        (t: 2100, angle: 160, valid: false),
+      ]);
+
+      expect(counter.reps, 0);
+      expect(counter.validReps, 0);
+    });
+
+    test('una sentadilla que no cierra en 6 s se descarta', () {
+      final counter = RepCounter();
+      feed(counter, LiftType.squat, [
+        (t: 0, angle: 100, valid: false),
+        (t: 1000, angle: 70, valid: true),
+        (t: 2000, angle: 70, valid: true),
+        (t: 3000, angle: 90, valid: true),
+        (t: 4000, angle: 90, valid: true),
+        (t: 5000, angle: 100, valid: false),
+        (t: 6000, angle: 110, valid: false),
+      ]);
+
+      expect(counter.reps, 0);
+      expect(counter.inRep, isFalse);
+    });
+
+    test('una pausa larga no borra la repetición que ya iba en curso', () {
+      final counter = RepCounter();
+      feed(counter, LiftType.squat, [
+        (t: 0, angle: 100, valid: false),
+        (t: 400, angle: 70, valid: true),
+        (t: 800, angle: 70, valid: true),
+        (t: 1000, angle: 80, valid: true),
+      ]);
+      feed(counter, LiftType.squat, [
+        (t: 8000, angle: 160, valid: false),
+      ]);
+
+      expect(counter.reps, 1);
+      expect(counter.validReps, 1);
+    });
+  });
 }

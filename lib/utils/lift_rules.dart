@@ -19,6 +19,18 @@ class LiftThresholds {
   /// Por debajo de esto el frame no mide ni cuenta.
   static const double minLandmarkConfidence = 0.60;
 
+  /// Si la cadena del ejercicio falta este tiempo, la repetición abierta se cancela.
+  static const int lostTrackingMs = 1200;
+
+  /// Una repetición que no vuelve al cierre en este plazo se descarta.
+  static const int maxRepDurationMs = 6000;
+
+  /// Un salto de reloj mayor que esto es una pausa, no una pérdida de cuerpo.
+  static const int clockGapMs = 1500;
+
+  /// Velocidad angular máxima creíble. Un frame que la supera se ignora.
+  static const double maxAngularSpeedDegPerSec = 360;
+
   static const double squatStart = 128;
   static const double squatDepth = 88;
   static const double squatLockout = 148;
