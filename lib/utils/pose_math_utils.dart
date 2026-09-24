@@ -121,17 +121,25 @@ class PoseMathUtils {
     }
   }
 
+  static bool _cadenaVisible(List<PoseLandmark?> points) {
+    if (points.any((point) => point == null)) return false;
+    return points.every(
+      (point) => point!.likelihood >= LiftThresholds.minLandmarkConfidence,
+    );
+  }
+
+  static double _confianzaMedia(List<PoseLandmark> points) {
+    final total = points.fold<double>(0, (sum, point) => sum + point.likelihood);
+    return total / points.length;
+  }
+
   static ExercisePoseAnalysis _analizarSquat(Pose pose, PoseSide side) {
     final isRight = side == PoseSide.right;
     final hip = pose.landmarks[isRight ? PoseLandmarkType.rightHip : PoseLandmarkType.leftHip];
     final knee = pose.landmarks[isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee];
     final ankle = pose.landmarks[isRight ? PoseLandmarkType.rightAnkle : PoseLandmarkType.leftAnkle];
 
-    final hasPoints = hip != null && knee != null && ankle != null;
-    final minConfidence = 0.40;
-    final isVisible = hasPoints &&
-        hip.likelihood >= minConfidence &&
-        knee.likelihood >= minConfidence;
+    final isVisible = _cadenaVisible([hip, knee, ankle]);
 
     if (!isVisible) {
       return ExercisePoseAnalysis(
@@ -146,7 +154,7 @@ class PoseMathUtils {
       );
     }
 
-    final anguloRodilla = calcularAngulo(hip, knee, ankle);
+    final anguloRodilla = calcularAngulo(hip!, knee!, ankle!);
     final isDeep = esSentadillaProfunda(anguloRodilla);
 
     return ExercisePoseAnalysis(
@@ -159,7 +167,7 @@ class PoseMathUtils {
       ),
       isValidForm: isDeep,
       trackingLandmark: hip, // La cadera define la trayectoria del descenso
-      confidence: (hip.likelihood + knee.likelihood) / 2.0,
+      confidence: _confianzaMedia([hip!, knee!, ankle!]),
       hasRequiredLandmarks: true,
     );
   }
@@ -170,11 +178,7 @@ class PoseMathUtils {
     final elbow = pose.landmarks[isRight ? PoseLandmarkType.rightElbow : PoseLandmarkType.leftElbow];
     final wrist = pose.landmarks[isRight ? PoseLandmarkType.rightWrist : PoseLandmarkType.leftWrist];
 
-    final hasPoints = shoulder != null && elbow != null && wrist != null;
-    final minConfidence = 0.40;
-    final isVisible = hasPoints &&
-        shoulder.likelihood >= minConfidence &&
-        elbow.likelihood >= minConfidence;
+    final isVisible = _cadenaVisible([shoulder, elbow, wrist]);
 
     if (!isVisible) {
       return ExercisePoseAnalysis(
@@ -189,7 +193,7 @@ class PoseMathUtils {
       );
     }
 
-    final anguloCodo = calcularAngulo(shoulder, elbow, wrist);
+    final anguloCodo = calcularAngulo(shoulder!, elbow!, wrist!);
     final isChest = esPressBancaEnPecho(anguloCodo);
     final isLockout = esPressBancaBloqueo(anguloCodo);
 
@@ -203,7 +207,7 @@ class PoseMathUtils {
       ),
       isValidForm: isChest || isLockout,
       trackingLandmark: wrist, // La muñeca representa el trayecto de la barra
-      confidence: (shoulder.likelihood + elbow.likelihood) / 2.0,
+      confidence: _confianzaMedia([shoulder!, elbow!, wrist!]),
       hasRequiredLandmarks: true,
     );
   }
@@ -216,11 +220,7 @@ class PoseMathUtils {
     final ankle = pose.landmarks[isRight ? PoseLandmarkType.rightAnkle : PoseLandmarkType.leftAnkle];
     final wrist = pose.landmarks[isRight ? PoseLandmarkType.rightWrist : PoseLandmarkType.leftWrist];
 
-    final hasPoints = hip != null && knee != null && ankle != null;
-    final minConfidence = 0.40;
-    final isVisible = hasPoints &&
-        hip.likelihood >= minConfidence &&
-        knee.likelihood >= minConfidence;
+    final isVisible = _cadenaVisible([shoulder, hip, knee, ankle]);
 
     if (!isVisible) {
       return ExercisePoseAnalysis(
@@ -235,8 +235,12 @@ class PoseMathUtils {
       );
     }
 
-    final anguloRodilla = calcularAngulo(hip, knee, ankle);
-    final anguloCadera = shoulder != null ? calcularAngulo(shoulder, hip, knee) : 180.0;
+    final shoulderPoint = shoulder!;
+    final hipPoint = hip!;
+    final kneePoint = knee!;
+    final anklePoint = ankle!;
+    final anguloRodilla = calcularAngulo(hipPoint, kneePoint, anklePoint);
+    final anguloCadera = calcularAngulo(shoulderPoint, hipPoint, kneePoint);
     final isLockout = esBloqueoPesoMuerto(anguloCadera, anguloRodilla);
 
     return ExercisePoseAnalysis(
@@ -249,8 +253,11 @@ class PoseMathUtils {
         secondaryAngle: anguloRodilla,
       ),
       isValidForm: isLockout,
-      trackingLandmark: wrist ?? hip, // Muñeca/barra para la trayectoria vertical
-      confidence: (hip.likelihood + knee.likelihood) / 2.0,
+      trackingLandmark: (wrist != null &&
+              wrist.likelihood >= LiftThresholds.minLandmarkConfidence)
+          ? wrist
+          : hip,
+      confidence: _confianzaMedia([shoulderPoint, hipPoint, kneePoint, anklePoint]),
       hasRequiredLandmarks: true,
     );
   }

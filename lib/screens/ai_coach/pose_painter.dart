@@ -152,7 +152,7 @@ class PosePainter extends CustomPainter {
       ..color = isLocked ? Colors.cyan : Colors.deepPurpleAccent;
 
     pose.landmarks.forEach((type, landmark) {
-      if (landmark.likelihood > 0.45) {
+      if (landmark.likelihood >= LiftThresholds.minLandmarkConfidence) {
         final offset = _obtenerOffset(type, landmark, size);
         canvas.drawCircle(offset, 4.5, jointFill);
         canvas.drawCircle(offset, 4.5, jointBorder);
@@ -169,7 +169,10 @@ class PosePainter extends CustomPainter {
     );
 
     final landmarkClave = pose.landmarks[typeClave];
-    if (landmarkClave == null || landmarkClave.likelihood < 0.45) return;
+    if (landmarkClave == null ||
+        landmarkClave.likelihood < LiftThresholds.minLandmarkConfidence) {
+      return;
+    }
 
     final offsetPunto = _obtenerOffset(typeClave, landmarkClave, size);
     final pos = Offset(offsetPunto.dx + 15, offsetPunto.dy - 10);
@@ -230,7 +233,10 @@ class PosePainter extends CustomPainter {
     final point1 = pose.landmarks[point1Type];
     final point2 = pose.landmarks[point2Type];
 
-    if (point1 != null && point2 != null && point1.likelihood > 0.40 && point2.likelihood > 0.40) {
+    if (point1 != null &&
+        point2 != null &&
+        point1.likelihood >= LiftThresholds.minLandmarkConfidence &&
+        point2.likelihood >= LiftThresholds.minLandmarkConfidence) {
       final p1 = _obtenerOffset(point1Type, point1, size);
       final p2 = _obtenerOffset(point2Type, point2, size);
       canvas.drawLine(p1, p2, paint);

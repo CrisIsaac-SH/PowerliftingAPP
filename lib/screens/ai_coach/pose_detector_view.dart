@@ -395,7 +395,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
         // Suavizado temporal de las coordenadas de cada articulación (Anti-Jitter)
         final factorCoords = _isLocked ? 0.40 : 0.65;
         posePrincipal.landmarks.forEach((type, landmark) {
-          if (landmark.likelihood > 0.40) {
+          if (landmark.likelihood >= LiftThresholds.minLandmarkConfidence) {
             final rawX = _traducirCoordenadaX(landmark.x, imageSize, rotation, lensDir);
             final rawY = _traducirCoordenadaY(landmark.y, imageSize, rotation);
 

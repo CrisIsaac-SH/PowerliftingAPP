@@ -15,6 +15,10 @@ class LiftThresholds {
   /// Fotogramas seguidos en el fondo antes de dar la profundidad por válida.
   static const int depthFramesRequired = 2;
 
+  /// Confianza mínima de ML Kit para usar una articulación en el ángulo.
+  /// Por debajo de esto el frame no mide ni cuenta.
+  static const double minLandmarkConfidence = 0.60;
+
   static const double squatStart = 128;
   static const double squatDepth = 88;
   static const double squatLockout = 148;

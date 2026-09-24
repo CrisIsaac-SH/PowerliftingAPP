@@ -157,7 +157,7 @@ class VideoPoseAnalyzer {
               timeMs: timeMs,
             );
             final track = analysis.trackingLandmark;
-            if (track != null && track.likelihood > 0.40) {
+            if (track != null && track.likelihood >= LiftThresholds.minLandmarkConfidence) {
               final point = Offset(track.x, track.y);
               if (trajectory.isEmpty || (trajectory.last - point).distance >= 6) {
                 trajectory.add(point);

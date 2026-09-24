@@ -130,7 +130,7 @@ class PlaybackPosePainter extends CustomPainter {
       ..color = Colors.deepPurpleAccent;
 
     pose.landmarks.forEach((type, landmark) {
-      if (landmark.likelihood > 0.45) {
+      if (landmark.likelihood >= LiftThresholds.minLandmarkConfidence) {
         final offset = _mapLandmark(landmark, size);
         canvas.drawCircle(offset, 4.5, fill);
         canvas.drawCircle(offset, 4.5, border);
@@ -147,7 +147,9 @@ class PlaybackPosePainter extends CustomPainter {
     );
 
     final landmark = pose.landmarks[type];
-    if (landmark == null || landmark.likelihood < 0.45) return;
+    if (landmark == null || landmark.likelihood < LiftThresholds.minLandmarkConfidence) {
+      return;
+    }
 
     final pos = _mapLandmark(landmark, size) + const Offset(15, -10);
     final painter = TextPainter(
@@ -195,7 +197,10 @@ class PlaybackPosePainter extends CustomPainter {
   ) {
     final p1 = pose.landmarks[a];
     final p2 = pose.landmarks[b];
-    if (p1 == null || p2 == null || p1.likelihood <= 0.40 || p2.likelihood <= 0.40) {
+    if (p1 == null ||
+        p2 == null ||
+        p1.likelihood < LiftThresholds.minLandmarkConfidence ||
+        p2.likelihood < LiftThresholds.minLandmarkConfidence) {
       return;
     }
     canvas.drawLine(_mapLandmark(p1, size), _mapLandmark(p2, size), paint);
