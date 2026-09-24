@@ -872,15 +872,9 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
 
     // En iOS CameraPreview ya queda derecho. En Android, al grabar CameraX
     // entrega el buffer del sensor (apaisado) y hay que rotarlo a vertical.
+    // En la previa no se fuerza el tamaño de la pantalla: eso estiraba la imagen.
     if (!Platform.isAndroid || !controller.value.isRecordingVideo) {
-      return FittedBox(
-        fit: BoxFit.cover,
-        child: SizedBox(
-          width: MediaQuery.of(context).size.width,
-          height: MediaQuery.of(context).size.height,
-          child: CameraPreview(controller),
-        ),
-      );
+      return _previewSinEstirar(controller);
     }
 
     final previewSize = controller.value.previewSize;
@@ -915,6 +909,27 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
         width: rotated ? previewSize.height : previewSize.width,
         height: rotated ? previewSize.width : previewSize.height,
         child: preview,
+      ),
+    );
+  }
+
+  Widget _previewSinEstirar(CameraController controller) {
+    final ratio = controller.value.aspectRatio;
+    if (ratio == 0) return CameraPreview(controller);
+
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final displayRatio = isLandscape ? ratio : (1 / ratio);
+    const base = 1000.0;
+
+    return ClipRect(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: base * displayRatio,
+          height: base,
+          child: CameraPreview(controller),
+        ),
       ),
     );
   }
