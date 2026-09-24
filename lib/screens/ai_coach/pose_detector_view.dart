@@ -32,6 +32,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
   bool _canProcess = true;
   bool _isBusy = false;
   bool _isRecordingVideo = false;
+  bool _controlandoGrabacion = false;
   bool _isExiting = false;
 
   // Estado de detección
@@ -101,7 +102,8 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       }
 
       _cameraController = controller;
-      await _iniciarGrabacionConAnalisis(controller);
+      _isRecordingVideo = false;
+      await _iniciarAnalisisEnVivo(controller);
       if (!mounted) {
         await _liberarCamara();
         return;
@@ -112,18 +114,74 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
     }
   }
 
-  Future<void> _iniciarGrabacionConAnalisis(CameraController controller) async {
+  bool get _grabandoActivo {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return false;
+    return controller.value.isRecordingVideo && !controller.value.isRecordingPaused;
+  }
+
+  bool get _grabacionEnPausa {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return false;
+    return controller.value.isRecordingPaused;
+  }
+
+  /// Vista previa con esqueleto, sin archivo de video.
+  Future<void> _iniciarAnalisisEnVivo(CameraController controller) async {
+    if (!controller.value.isInitialized ||
+        controller.value.isStreamingImages ||
+        controller.value.isRecordingVideo) {
+      return;
+    }
     try {
-      await controller.startVideoRecording(onAvailable: _procesarImagenDeCamara);
-      _isRecordingVideo = true;
+      await controller.startImageStream(_procesarImagenDeCamara);
     } catch (e) {
-      debugPrint('No se pudo iniciar la grabación, se continúa solo con análisis: $e');
-      _isRecordingVideo = false;
-      try {
-        await controller.startImageStream(_procesarImagenDeCamara);
-      } catch (streamError) {
-        debugPrint('Tampoco se pudo iniciar el stream de análisis: $streamError');
+      debugPrint('No se pudo iniciar el análisis en vivo: $e');
+    }
+  }
+
+  Future<void> _alPulsarGrabacion() async {
+    final controller = _cameraController;
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        _controlandoGrabacion ||
+        _isExiting) {
+      return;
+    }
+
+    _controlandoGrabacion = true;
+    try {
+      if (controller.value.isRecordingVideo) {
+        if (controller.value.isRecordingPaused) {
+          await controller.resumeVideoRecording();
+        } else {
+          await controller.pauseVideoRecording();
+        }
+        _isRecordingVideo = true;
+      } else {
+        if (controller.value.isStreamingImages) {
+          await controller.stopImageStream();
+        }
+        await controller.startVideoRecording(onAvailable: _procesarImagenDeCamara);
+        _isRecordingVideo = true;
       }
+    } catch (e) {
+      debugPrint('Error al controlar la grabación: $e');
+      _isRecordingVideo = controller.value.isRecordingVideo;
+      if (!controller.value.isRecordingVideo && !controller.value.isStreamingImages) {
+        await _iniciarAnalisisEnVivo(controller);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo cambiar la grabación. Intenta de nuevo.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      _controlandoGrabacion = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -266,6 +324,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
 
   Future<void> _procesarImagenDeCamara(CameraImage image) async {
     if (_isBusy || !_canProcess || _cameraController == null) return;
+    if (_grabacionEnPausa) return;
     _isBusy = true;
 
     try {
@@ -302,12 +361,28 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
           factorSuavizadoAngulo,
         );
 
+        final lift = LiftThresholds.fromName(widget.exercise);
+        final cuerpoVisible = analisisCrudo.hasRequiredLandmarks;
+        final formaValida = cuerpoVisible
+            ? _formaValidaConAnguloSuavizado(
+                lift,
+                _smoothedAngle,
+                analisisCrudo.secondaryAngle,
+              )
+            : false;
+
         final analisis = ExercisePoseAnalysis(
           side: analisisCrudo.side,
           primaryAngle: _smoothedAngle,
           secondaryAngle: analisisCrudo.secondaryAngle,
-          statusMessage: analisisCrudo.statusMessage,
-          isValidForm: analisisCrudo.isValidForm,
+          statusMessage: cuerpoVisible
+              ? LiftStatus.message(
+                  lift: lift,
+                  angle: _smoothedAngle,
+                  secondaryAngle: analisisCrudo.secondaryAngle,
+                )
+              : analisisCrudo.statusMessage,
+          isValidForm: formaValida,
           trackingLandmark: analisisCrudo.trackingLandmark,
           confidence: analisisCrudo.confidence,
           hasRequiredLandmarks: analisisCrudo.hasRequiredLandmarks,
@@ -336,8 +411,8 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
           }
         });
 
-        // Actualizar máquina de estados de repeticiones con debounce e histeresis
-        if (analisis.hasRequiredLandmarks) {
+        // El esqueleto se ve en la previa. Reps y trayectoria solo mientras se graba.
+        if (analisis.hasRequiredLandmarks && _grabandoActivo) {
           _actualizarContadorReps(analisis);
 
           // Registrar punto para la traza del movimiento (Bar Path con Noise Gate)
@@ -382,6 +457,22 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       debugPrint('Error en la detección: $e');
     } finally {
       _isBusy = false;
+    }
+  }
+
+  bool _formaValidaConAnguloSuavizado(
+    LiftType lift,
+    double angle,
+    double secondaryAngle,
+  ) {
+    switch (lift) {
+      case LiftType.squat:
+        return PoseMathUtils.esSentadillaProfunda(angle);
+      case LiftType.bench:
+        return PoseMathUtils.esPressBancaEnPecho(angle) ||
+            PoseMathUtils.esPressBancaBloqueo(angle);
+      case LiftType.deadlift:
+        return PoseMathUtils.esBloqueoPesoMuerto(angle, secondaryAngle);
     }
   }
 
@@ -729,6 +820,8 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
     if (controller != null) {
       if (controller.value.isRecordingVideo) {
         controller.stopVideoRecording().whenComplete(() => controller.dispose());
+      } else if (controller.value.isStreamingImages) {
+        controller.stopImageStream().whenComplete(() => controller.dispose());
       } else {
         controller.dispose();
       }
@@ -870,8 +963,11 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (_isRecordingVideo) ...[
+                      if (_grabandoActivo) ...[
                         const Icon(Icons.fiber_manual_record, color: Colors.redAccent, size: 12),
+                        const SizedBox(width: 6),
+                      ] else if (_grabacionEnPausa) ...[
+                        const Icon(Icons.pause, color: Colors.amberAccent, size: 14),
                         const SizedBox(width: 6),
                       ],
                       Icon(
@@ -942,11 +1038,13 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isLocked
-                              ? '🔒 TRAZA BLOQUEADA (ALTA ESTABILIDAD)'
-                              : (_cuerpoDetectado
-                                  ? '¡CUERPO REGISTRADO Y RASTREADO!'
-                                  : 'BUSCANDO ATLETA...'),
+                          _grabacionEnPausa
+                              ? 'GRABACIÓN EN PAUSA'
+                              : (_isLocked
+                                  ? '🔒 TRAZA BLOQUEADA (ALTA ESTABILIDAD)'
+                                  : (_cuerpoDetectado
+                                      ? '¡CUERPO REGISTRADO Y RASTREADO!'
+                                      : 'BUSCANDO ATLETA...')),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -955,11 +1053,15 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
                           ),
                         ),
                         Text(
-                          _isLocked
-                              ? 'Filtro anti-vibración activo en ${widget.exercise}'
-                              : (_cuerpoDetectado
-                                  ? 'Puedes pulsar "Fijar Traza" para anclar la postura'
-                                  : 'Ubica tu cuerpo completo en el encuadre'),
+                          _grabacionEnPausa
+                              ? 'Pulsa el botón rojo para continuar'
+                              : (_isLocked
+                                  ? 'Filtro anti-vibración activo en ${widget.exercise}'
+                                  : (_cuerpoDetectado
+                                      ? (_grabandoActivo
+                                          ? 'Puedes pulsar "Fijar Traza" para anclar la postura'
+                                          : 'Pulsa Grabar cuando estés en posición')
+                                      : 'Ubica tu cuerpo completo en el encuadre')),
                           style: const TextStyle(color: Colors.white70, fontSize: 11),
                         ),
                       ],
@@ -1005,6 +1107,8 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  _buildBotonGrabacion(),
+                  const SizedBox(height: 14),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
@@ -1080,6 +1184,55 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBotonGrabacion() {
+    final grabbing = _grabandoActivo;
+    final paused = _grabacionEnPausa;
+    final label = grabbing ? 'Pausar' : (paused ? 'Reanudar' : 'Grabar');
+
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: _controlandoGrabacion ? null : _alPulsarGrabacion,
+          child: Container(
+            width: 74,
+            height: 74,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: grabbing ? Colors.redAccent : Colors.white,
+                width: 4,
+              ),
+            ),
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: grabbing ? 32 : 58,
+                height: grabbing ? 32 : 58,
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  borderRadius: BorderRadius.circular(grabbing ? 8 : 40),
+                ),
+                child: grabbing
+                    ? const Icon(Icons.pause, color: Colors.white, size: 22)
+                    : null,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.6,
+          ),
+        ),
+      ],
     );
   }
 

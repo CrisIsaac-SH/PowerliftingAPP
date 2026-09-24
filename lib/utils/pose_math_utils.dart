@@ -57,22 +57,23 @@ class PoseMathUtils {
 
   /// Evalúa la profundidad de la sentadilla (rompe la paralela)
   static bool esSentadillaProfunda(double anguloRodilla) {
-    return anguloRodilla <= 88.0;
+    return anguloRodilla <= LiftThresholds.squatDepth;
   }
 
   /// Evalúa si en press de banca la barra alcanzó el pecho
   static bool esPressBancaEnPecho(double anguloCodo) {
-    return anguloCodo <= 92.0;
+    return anguloCodo <= LiftThresholds.benchDepth;
   }
 
   /// Evalúa si en press de banca se completó el bloqueo
   static bool esPressBancaBloqueo(double anguloCodo) {
-    return anguloCodo >= 155.0;
+    return anguloCodo >= LiftThresholds.benchLockout;
   }
 
   /// Evalúa si en peso muerto se alcanzó el bloqueo articular de cadera y rodillas
   static bool esBloqueoPesoMuerto(double anguloCadera, double anguloRodilla) {
-    return anguloCadera >= 160.0 && anguloRodilla >= 160.0;
+    return anguloCadera >= LiftThresholds.deadliftLockout &&
+        anguloRodilla >= LiftThresholds.deadliftLockout;
   }
 
   /// Determina automáticamente qué lado del cuerpo (izquierdo o derecho)
@@ -148,20 +149,14 @@ class PoseMathUtils {
     final anguloRodilla = calcularAngulo(hip, knee, ankle);
     final isDeep = esSentadillaProfunda(anguloRodilla);
 
-    String message;
-    if (isDeep) {
-      message = '¡PARALELA ROTA (VÁLIDA)!';
-    } else if (anguloRodilla < 115) {
-      message = 'Descendiendo (Falta profundidad)';
-    } else {
-      message = 'De pie / Inicio';
-    }
-
     return ExercisePoseAnalysis(
       side: side,
       primaryAngle: anguloRodilla,
       secondaryAngle: 0.0,
-      statusMessage: message,
+      statusMessage: LiftStatus.message(
+        lift: LiftType.squat,
+        angle: anguloRodilla,
+      ),
       isValidForm: isDeep,
       trackingLandmark: hip, // La cadera define la trayectoria del descenso
       confidence: (hip.likelihood + knee.likelihood) / 2.0,
@@ -198,20 +193,14 @@ class PoseMathUtils {
     final isChest = esPressBancaEnPecho(anguloCodo);
     final isLockout = esPressBancaBloqueo(anguloCodo);
 
-    String message;
-    if (isChest) {
-      message = '¡PECHO ALCANZADO (ROM COMPLETO)!';
-    } else if (isLockout) {
-      message = 'Bloqueo completo (Arriba)';
-    } else {
-      message = 'En recorrido...';
-    }
-
     return ExercisePoseAnalysis(
       side: side,
       primaryAngle: anguloCodo,
       secondaryAngle: 0.0,
-      statusMessage: message,
+      statusMessage: LiftStatus.message(
+        lift: LiftType.bench,
+        angle: anguloCodo,
+      ),
       isValidForm: isChest || isLockout,
       trackingLandmark: wrist, // La muñeca representa el trayecto de la barra
       confidence: (shoulder.likelihood + elbow.likelihood) / 2.0,
@@ -250,20 +239,15 @@ class PoseMathUtils {
     final anguloCadera = shoulder != null ? calcularAngulo(shoulder, hip, knee) : 180.0;
     final isLockout = esBloqueoPesoMuerto(anguloCadera, anguloRodilla);
 
-    String message;
-    if (isLockout) {
-      message = '¡BLOQUEO COMPLETO (VÁLIDO)!';
-    } else if (anguloCadera < 115) {
-      message = 'Posición inicial / Suelo';
-    } else {
-      message = 'En tracción...';
-    }
-
     return ExercisePoseAnalysis(
       side: side,
       primaryAngle: anguloCadera,
       secondaryAngle: anguloRodilla,
-      statusMessage: message,
+      statusMessage: LiftStatus.message(
+        lift: LiftType.deadlift,
+        angle: anguloCadera,
+        secondaryAngle: anguloRodilla,
+      ),
       isValidForm: isLockout,
       trackingLandmark: wrist ?? hip, // Muñeca/barra para la trayectoria vertical
       confidence: (hip.likelihood + knee.likelihood) / 2.0,

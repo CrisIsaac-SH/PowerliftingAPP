@@ -81,4 +81,83 @@ void main() {
       expect(deadlift.last.$2, PoseLandmarkType.rightAnkle);
     });
   });
+
+  group('LiftStatus.message coincide con el color', () {
+    test('sentadilla: profundidad, descenso y de pie', () {
+      expect(
+        LiftStatus.message(lift: LiftType.squat, angle: 80),
+        '¡PARALELA ROTA (VÁLIDA)!',
+      );
+      expect(
+        LiftStatus.message(lift: LiftType.squat, angle: 126),
+        'Descendiendo (Falta profundidad)',
+      );
+      expect(
+        LiftVisuals.tone(lift: LiftType.squat, angle: 126, isValidForm: false),
+        LiftTraceTone.inRange,
+      );
+      expect(
+        LiftStatus.message(lift: LiftType.squat, angle: 140),
+        'De pie / Inicio',
+      );
+      expect(
+        LiftVisuals.tone(lift: LiftType.squat, angle: 140, isValidForm: false),
+        LiftTraceTone.extended,
+      );
+    });
+
+    test('banca: pecho, recorrido, inicio y bloqueo en 150', () {
+      expect(
+        LiftStatus.message(lift: LiftType.bench, angle: 90),
+        '¡PECHO ALCANZADO (ROM COMPLETO)!',
+      );
+      expect(
+        LiftStatus.message(lift: LiftType.bench, angle: 100),
+        'En recorrido...',
+      );
+      expect(
+        LiftVisuals.tone(lift: LiftType.bench, angle: 100, isValidForm: false),
+        LiftTraceTone.inRange,
+      );
+      expect(
+        LiftStatus.message(lift: LiftType.bench, angle: 130),
+        'Arriba / Inicio',
+      );
+      expect(
+        LiftVisuals.tone(lift: LiftType.bench, angle: 130, isValidForm: false),
+        LiftTraceTone.extended,
+      );
+      expect(
+        LiftStatus.message(lift: LiftType.bench, angle: 150),
+        'Bloqueo completo (Arriba)',
+      );
+    });
+
+    test('peso muerto: suelo, tracción y bloqueo de cadera y rodilla', () {
+      expect(
+        LiftStatus.message(lift: LiftType.deadlift, angle: 110, secondaryAngle: 100),
+        'Posición inicial / Suelo',
+      );
+      expect(
+        LiftVisuals.tone(lift: LiftType.deadlift, angle: 110, isValidForm: false),
+        LiftTraceTone.inRange,
+      );
+      expect(
+        LiftStatus.message(lift: LiftType.deadlift, angle: 140, secondaryAngle: 150),
+        'En tracción...',
+      );
+      expect(
+        LiftVisuals.tone(lift: LiftType.deadlift, angle: 140, isValidForm: false),
+        LiftTraceTone.extended,
+      );
+      expect(
+        LiftStatus.message(lift: LiftType.deadlift, angle: 165, secondaryAngle: 165),
+        '¡BLOQUEO COMPLETO (VÁLIDO)!',
+      );
+      expect(
+        LiftStatus.message(lift: LiftType.deadlift, angle: 170, secondaryAngle: 140),
+        'En tracción...',
+      );
+    });
+  });
 }

@@ -21,11 +21,15 @@ class LiftThresholds {
 
   static const double benchStart = 120;
   static const double benchDepth = 92;
+
+  /// Codo extendido: cierra la repetición y muestra el bloqueo en pantalla.
   static const double benchLockout = 150;
 
-  /// El peso muerto abre y cierra la fase al cruzar este ángulo de cadera.
-  /// El bloqueo en sí lo marca [ExercisePoseAnalysis.isValidForm].
+  /// El peso muerto abre la fase al bajar de este ángulo de cadera.
   static const double deadliftPhase = 120;
+
+  /// Cadera y rodilla deben llegar aquí para el bloqueo del peso muerto.
+  static const double deadliftLockout = 160;
 
   static LiftType fromName(String exercise) {
     final name = exercise.toUpperCase();
@@ -36,5 +40,47 @@ class LiftThresholds {
       return LiftType.deadlift;
     }
     return LiftType.squat;
+  }
+}
+
+/// Texto que acompaña al ángulo. Usa los mismos cortes que el color de la traza.
+class LiftStatus {
+  const LiftStatus._();
+
+  static String message({
+    required LiftType lift,
+    required double angle,
+    double secondaryAngle = 180,
+  }) {
+    switch (lift) {
+      case LiftType.squat:
+        if (angle <= LiftThresholds.squatDepth) {
+          return '¡PARALELA ROTA (VÁLIDA)!';
+        }
+        if (angle < LiftThresholds.squatStart) {
+          return 'Descendiendo (Falta profundidad)';
+        }
+        return 'De pie / Inicio';
+      case LiftType.bench:
+        if (angle <= LiftThresholds.benchDepth) {
+          return '¡PECHO ALCANZADO (ROM COMPLETO)!';
+        }
+        if (angle >= LiftThresholds.benchLockout) {
+          return 'Bloqueo completo (Arriba)';
+        }
+        if (angle < LiftThresholds.benchStart) {
+          return 'En recorrido...';
+        }
+        return 'Arriba / Inicio';
+      case LiftType.deadlift:
+        if (angle >= LiftThresholds.deadliftLockout &&
+            secondaryAngle >= LiftThresholds.deadliftLockout) {
+          return '¡BLOQUEO COMPLETO (VÁLIDO)!';
+        }
+        if (angle < LiftThresholds.deadliftPhase) {
+          return 'Posición inicial / Suelo';
+        }
+        return 'En tracción...';
+    }
   }
 }
