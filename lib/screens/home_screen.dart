@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_screen.dart';
 import 'record_set_screen.dart';
 import 'athlete_qr_screen.dart';
+import '../services/weight_unit_controller.dart';
 import '../utils/one_rep_max.dart';
+import '../widgets/weight_unit_switch_tile.dart';
 import 'workout_detail_screen.dart';
 import 'history_screen.dart';
 
@@ -28,9 +31,13 @@ class _HomeScreenState extends State<HomeScreen> {
   double _maxBench = 0.0;
   double _maxDeadlift = 0.0;
 
+  bool _datosIniciados = false;
+
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_datosIniciados) return;
+    _datosIniciados = true;
     _inicializarDatos();
   }
 
@@ -42,6 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _obtenerDatosDelUsuario() async {
     try {
+      await context.read<WeightUnitController>().load();
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
         final data = await Supabase.instance.client
@@ -140,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _buildExerciseCard(String title, String imagePath, double maxWeight) {
+  Widget _buildExerciseCard(String title, String imagePath, double maxWeight, WeightUnitController units) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
@@ -195,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '1RM: ${maxWeight.toStringAsFixed(1)} kg',
+                        '1RM: ${units.format(maxWeight)}',
                         style: const TextStyle(
                           fontSize: 14,
                           color: Colors.white70,
@@ -265,21 +273,33 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
-          // Aquí puedes agregar más opciones en el futuro (Ajustes, Calculadora RM, etc.)
-          
+          const Divider(color: Colors.white12, height: 1),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'CONFIGURACIÓN',
+                style: TextStyle(color: Colors.white38, fontSize: 12, letterSpacing: 1.2),
+              ),
+            ),
+          ),
+          const WeightUnitSwitchTile(),
+
           const Spacer(), // Empuja el botón de cerrar sesión hacia abajo
           const Divider(color: Colors.white12, height: 1),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.redAccent),
             title: const Text('Cerrar sesión', style: TextStyle(color: Colors.redAccent, fontSize: 16)),
             onTap: () async {
+              final units = context.read<WeightUnitController>();
               await Supabase.instance.client.auth.signOut();
-              if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (context) => const LoginScreen()),
-                  (route) => false,
-                );
-              }
+              if (!mounted) return;
+              units.reset();
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+                (route) => false,
+              );
             },
           ),
           const SizedBox(height: 20), // Margen inferior
@@ -292,6 +312,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     const backgroundColor = Color(0xFF333333);
     const darkAccentColor = Color(0xFF180A0A);
+    final units = context.watch<WeightUnitController>();
     final double total = _maxSquat + _maxBench + _maxDeadlift;
 
     return Scaffold(
@@ -347,7 +368,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           border: Border.all(color: Colors.redAccent.withOpacity(0.5), width: 2), // Un toque de rojo
                         ),
                         child: Text(
-                          'Total SBD: ${total.toStringAsFixed(1)} kg',
+                          'Total SBD: ${units.format(total)}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -369,9 +390,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       children: [
-                        _buildExerciseCard('SQUAT', 'assets/squat.jpeg', _maxSquat),
-                        _buildExerciseCard('BENCH', 'assets/bench.jpeg', _maxBench),
-                        _buildExerciseCard('DEADLIFT', 'assets/deadlift.jpeg', _maxDeadlift),
+                        _buildExerciseCard('SQUAT', 'assets/squat.jpeg', _maxSquat, units),
+                        _buildExerciseCard('BENCH', 'assets/bench.jpeg', _maxBench, units),
+                        _buildExerciseCard('DEADLIFT', 'assets/deadlift.jpeg', _maxDeadlift, units),
                       ],
                     ),
                   ),
@@ -452,20 +473,24 @@ class _HomeScreenState extends State<HomeScreen> {
                                             child: Row(
                                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                               children: [
-                                                Text(
-                                                  exerciseName,
-                                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                                Expanded(
+                                                  child: Text(
+                                                    exerciseName,
+                                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
                                                 ),
-                                                Row(
-                                                  children: [
-                                                    Text(
-                                                      '${set['weight']}kg x ${set['reps']} ${set['rpe'] != null ? '@ RPE ${set['rpe']}' : ''}',
-                                                      style: const TextStyle(color: Colors.white70),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    const Icon(Icons.chevron_right, color: Colors.white38, size: 18),
-                                                  ],
+                                                const SizedBox(width: 8),
+                                                Flexible(
+                                                  child: Text(
+                                                    '${units.formatStored(set['weight'])} x ${set['reps']} ${set['rpe'] != null ? '@ RPE ${set['rpe']}' : ''}',
+                                                    style: const TextStyle(color: Colors.white70),
+                                                    overflow: TextOverflow.ellipsis,
+                                                    textAlign: TextAlign.right,
+                                                  ),
                                                 ),
+                                                const SizedBox(width: 8),
+                                                const Icon(Icons.chevron_right, color: Colors.white38, size: 18),
                                               ],
                                             ),
                                           ),

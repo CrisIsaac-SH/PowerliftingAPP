@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/s3_video_service.dart';
+import '../services/weight_unit_controller.dart';
+import '../utils/weight_units.dart';
 import 'set_video_player_screen.dart';
 
 class WorkoutDetailScreen extends StatefulWidget {
@@ -96,8 +99,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   }
 
   void _showSetDetail(Map<String, dynamic> setItem) {
+    final units = context.read<WeightUnitController>();
     final exerciseName = setItem['exercises']?['name'] ?? 'Ejercicio';
-    final weight = setItem['weight'];
+    final weight = units.formatStored(setItem['weight']);
     final reps = setItem['reps'];
     final rpe = setItem['rpe'];
     final videoUrl = setItem['video_url'] as String?;
@@ -135,7 +139,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                '${weight}kg x $reps ${rpe != null ? '@ RPE $rpe' : ''}',
+                '$weight x $reps ${rpe != null ? '@ RPE $rpe' : ''}',
                 style: const TextStyle(color: Colors.white70, fontSize: 15),
               ),
               if (metrics != null) ...[
@@ -173,7 +177,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
   // Ventana flotante para editar peso, reps o RPE
   void _showEditDialog(Map<String, dynamic> setItem) {
-    final pesoController = TextEditingController(text: setItem['weight'].toString());
+    final units = context.read<WeightUnitController>();
+    final originalKg = readKilograms(setItem['weight']);
+    final pesoController = TextEditingController(text: units.inputText(originalKg));
     final repsController = TextEditingController(text: setItem['reps'].toString());
     final rpeController = TextEditingController(text: setItem['rpe']?.toString() ?? '');
 
@@ -204,9 +210,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                 controller: pesoController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: 'Peso (kg)',
-                  labelStyle: TextStyle(color: Colors.white54),
+                decoration: InputDecoration(
+                  labelText: 'Peso (${units.suffix})',
+                  labelStyle: const TextStyle(color: Colors.white54),
                 ),
               ),
               const SizedBox(height: 12),
@@ -236,7 +242,10 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   minimumSize: const Size.fromHeight(48),
                 ),
                 onPressed: () async {
-                  final newWeight = double.tryParse(pesoController.text);
+                  final newWeight = units.kilogramsFromInput(
+                    pesoController.text,
+                    originalKilograms: originalKg,
+                  );
                   final newReps = int.tryParse(repsController.text);
                   final newRpe = double.tryParse(rpeController.text);
 
@@ -262,6 +271,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final units = context.watch<WeightUnitController>();
     return Scaffold(
       backgroundColor: const Color(0xFF333333),
       appBar: AppBar(
@@ -284,7 +294,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   itemBuilder: (context, index) {
                     final setItem = _sets[index];
                     final exerciseName = setItem['exercises']?['name'] ?? 'Ejercicio';
-                    final weight = setItem['weight'];
+                    final weight = units.formatStored(setItem['weight']);
                     final reps = setItem['reps'];
                     final rpe = setItem['rpe'];
 
@@ -298,7 +308,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          '${weight}kg x $reps ${rpe != null ? '@ RPE $rpe' : ''}',
+                          '$weight x $reps ${rpe != null ? '@ RPE $rpe' : ''}',
                           style: const TextStyle(color: Colors.white70),
                         ),
                         trailing: Row(

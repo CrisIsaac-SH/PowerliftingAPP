@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'workout_detail_screen.dart';
+import '../services/weight_unit_controller.dart';
 import '../utils/one_rep_max.dart'; // Asegúrate de que la ruta sea correcta
 
 class HistoryScreen extends StatefulWidget {
@@ -108,8 +110,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
+  List<FlSpot> _spotsInUnit(List<FlSpot> spots, WeightUnitController units) {
+    return [
+      for (final spot in spots) FlSpot(spot.x, units.fromKg(spot.y)),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
+    final units = context.watch<WeightUnitController>();
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -133,7 +142,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             : TabBarView(
                 children: [
                   _buildHistoryTab(),
-                  _buildChartTab(),
+                  _buildChartTab(units),
                 ],
               ),
       ),
@@ -186,17 +195,26 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   // --- PESTAÑA 2: GRÁFICOS ---
-  Widget _buildChartTab() {
+  Widget _buildChartTab(WeightUnitController units) {
     if (_squatSpots.isEmpty && _benchSpots.isEmpty && _deadliftSpots.isEmpty) {
       return const Center(
         child: Text('No hay datos suficientes para graficar.', style: TextStyle(color: Colors.white54)),
       );
     }
 
+    final squatSpots = _spotsInUnit(_squatSpots, units);
+    final benchSpots = _spotsInUnit(_benchSpots, units);
+    final deadliftSpots = _spotsInUnit(_deadliftSpots, units);
+
     return Padding(
       padding: const EdgeInsets.all(24.0),
       child: Column(
         children: [
+          Text(
+            '1RM estimado (${units.suffix})',
+            style: const TextStyle(color: Colors.white54, fontSize: 13),
+          ),
+          const SizedBox(height: 12),
           // Leyenda
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -240,7 +258,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      reservedSize: 40,
+                      reservedSize: 48,
                       getTitlesWidget: (value, meta) {
                         return Text(
                           '${value.toInt()}',
@@ -252,9 +270,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
                 borderData: FlBorderData(show: false),
                 lineBarsData: [
-                  if (_squatSpots.isNotEmpty) _buildLineChartBarData(_squatSpots, Colors.redAccent),
-                  if (_benchSpots.isNotEmpty) _buildLineChartBarData(_benchSpots, Colors.blueAccent),
-                  if (_deadliftSpots.isNotEmpty) _buildLineChartBarData(_deadliftSpots, Colors.greenAccent),
+                  if (squatSpots.isNotEmpty) _buildLineChartBarData(squatSpots, Colors.redAccent),
+                  if (benchSpots.isNotEmpty) _buildLineChartBarData(benchSpots, Colors.blueAccent),
+                  if (deadliftSpots.isNotEmpty) _buildLineChartBarData(deadliftSpots, Colors.greenAccent),
                 ],
               ),
             ),

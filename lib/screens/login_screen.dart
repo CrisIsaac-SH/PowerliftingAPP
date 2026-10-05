@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:powerliftingapp/services/auth_service.dart';
+import '../services/weight_unit_controller.dart';
 // Importamos las pantallas necesarias
 
 import 'complete_profile.dart';
@@ -52,6 +54,10 @@ class _LoginScreenState extends State<LoginScreen> {
         profile['full_name'].toString().trim().isNotEmpty;
 
     final bool isCoach = profile != null && profile['is_coach'] == true;
+
+    if (mounted) {
+      await context.read<WeightUnitController>().load();
+    }
 
     Widget pantallaDestino;
 
@@ -116,6 +122,9 @@ class _LoginScreenState extends State<LoginScreen> {
         //-----------------------
         //verificamos si es coach o no
         final bool isCoach = profile != null && profile['is_coach'] == true;
+        if (!mounted) return;
+        await context.read<WeightUnitController>().load();
+        if (!mounted) return;
         //para enseñar que si se inicio sesion
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

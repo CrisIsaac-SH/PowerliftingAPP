@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/weight_unit_controller.dart';
 import 'home_screen.dart';
 import 'coach_home_screen.dart';
 //importaciones de pantalla y componentes
@@ -71,9 +73,13 @@ class _CompleteProfileState extends State<CompleteProfile> {
       return;
     }
 //validacion  de peso minimo y maximo con sentido
-    final peso = double.tryParse(pesoTexto);
+    final units = context.read<WeightUnitController>();
+    final pesoIngresado = double.tryParse(pesoTexto);
+    final peso = pesoIngresado == null ? null : units.toKg(pesoIngresado);
     if (peso == null || peso < 30 || peso > 300) {
-      _mostrarError('Ingresa un peso válido (entre 30 y 300 kg)');
+      _mostrarError(
+        'Ingresa un peso válido (entre ${units.format(30, decimals: 0)} y ${units.format(300, decimals: 0)})',
+      );
       return;
     }
 
@@ -149,6 +155,7 @@ class _CompleteProfileState extends State<CompleteProfile> {
 //estilos de la pantalla de completar perfil
   @override
   Widget build(BuildContext context) {
+    final units = context.watch<WeightUnitController>();
     return Scaffold(
       backgroundColor: const Color(0xFF333333),
       appBar: AppBar(
@@ -220,7 +227,7 @@ class _CompleteProfileState extends State<CompleteProfile> {
                 controller: _pesoController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 style: const TextStyle(color: Colors.white),
-                decoration: _customDecoration('Peso corporal actual (kg)', Icons.monitor_weight),
+                decoration: _customDecoration('Peso corporal actual (${units.suffix})', Icons.monitor_weight),
               ),
               const SizedBox(height: 30),
 

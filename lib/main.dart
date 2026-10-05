@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';//para lo visual 
 import 'package:supabase_flutter/supabase_flutter.dart';//paara conectar con supabase
 import 'package:google_fonts/google_fonts.dart';//tipografia
+import 'package:provider/provider.dart';
 
 //importaciones de pantallas
 import 'screens/login_screen.dart';
+import 'services/weight_unit_controller.dart';
 
 void main() async {
 //prioridad de inicializar Supabase, aseguramos que Flutter esté listo
@@ -16,7 +18,12 @@ void main() async {
   
 
   // 3. iniciamos la app
-  runApp(const PowerliftingApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => WeightUnitController(),
+      child: const PowerliftingApp(),
+    ),
+  );
 }
 
 

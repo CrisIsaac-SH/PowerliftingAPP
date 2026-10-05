@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/s3_config.dart';
 import '../services/s3_video_service.dart';
+import '../services/weight_unit_controller.dart';
 import '../utils/one_rep_max.dart';
 import 'ai_coach/pose_detector_view.dart';
 
@@ -174,6 +176,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
       return;
     }
 
+    final units = context.read<WeightUnitController>();
     final peso = double.tryParse(_pesoController.text);
     final reps = int.tryParse(_repsController.text);
     final rpe = double.tryParse(_rpeController.text); 
@@ -207,8 +210,8 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 8),
-            Text('• Carga: $peso kg x $reps reps ${rpe != null ? "(@ RPE $rpe)" : ""}', style: const TextStyle(color: Colors.white70)),
-            Text('• 1RM Estimado: ${_rmEstimado.toStringAsFixed(1)} kg', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+            Text('• Carga: $peso ${units.suffix} x $reps reps ${rpe != null ? "(@ RPE $rpe)" : ""}', style: const TextStyle(color: Colors.white70)),
+            Text('• 1RM Estimado: ${_rmEstimado.toStringAsFixed(1)} ${units.suffix}', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
             if (_aiMetrics != null) ...[
               const Divider(color: Colors.white24, height: 16),
               Text(
@@ -307,7 +310,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
         await supabase.from('sets').insert({
           'workout_id': workoutId,
           'exercise_id': _selectedExerciseId,
-          'weight': peso,
+          'weight': units.toKg(peso),
           'reps': reps,
           ...?((rpe != null) ? {'rpe': rpe} : null),
           ...?((videoUrl != null) ? {'video_url': videoUrl} : null),
@@ -342,6 +345,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final units = context.watch<WeightUnitController>();
     return Scaffold(
       backgroundColor: const Color(0xFF333333),
       appBar: AppBar(
@@ -371,7 +375,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '${_rmEstimado.toStringAsFixed(1)} kg',
+                        '${_rmEstimado.toStringAsFixed(1)} ${units.suffix}',
                         style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.redAccent),
                       ),
                     ],
@@ -452,7 +456,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
               const SizedBox(height: 20),
               _buildCustomTextField(
                 controller: _pesoController,
-                label: 'Peso levantado (kg)',
+                label: 'Peso levantado (${units.suffix})',
                 icon: Icons.fitness_center,
                 isDecimal: true,
               ),
@@ -627,7 +631,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                               children: [
                                 const Text('Carga Levantada:', style: TextStyle(color: Colors.white70, fontSize: 13)),
                                 Text(
-                                  '${_pesoController.text.isEmpty ? "0" : _pesoController.text} kg x ${_repsController.text.isEmpty ? "0" : _repsController.text} reps',
+                                  '${_pesoController.text.isEmpty ? "0" : _pesoController.text} ${units.suffix} x ${_repsController.text.isEmpty ? "0" : _repsController.text} reps',
                                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                                 ),
                               ],
@@ -638,7 +642,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                               children: [
                                 const Text('1RM Estimado:', style: TextStyle(color: Colors.white70, fontSize: 13)),
                                 Text(
-                                  '${_rmEstimado.toStringAsFixed(1)} kg',
+                                  '${_rmEstimado.toStringAsFixed(1)} ${units.suffix}',
                                   style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
                                 ),
                               ],

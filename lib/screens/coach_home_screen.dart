@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/weight_unit_controller.dart';
+import '../widgets/weight_unit_switch_tile.dart';
 import 'scan_athlete_qr_screen.dart';
 import 'login_screen.dart';
 
@@ -15,9 +18,13 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
   List<Map<String, dynamic>> _misAtletas = [];
   List<Map<String, dynamic>> _atletasDisponibles = [];
 
+  bool _datosIniciados = false;
+
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_datosIniciados) return;
+    _datosIniciados = true;
     _cargarDatos();
   }
 
@@ -25,6 +32,7 @@ class _CoachHomeScreenState extends State<CoachHomeScreen> {
   Future<void> _cargarDatos() async {
     setState(() => _isLoading = true);
     try {
+      await context.read<WeightUnitController>().load();
       final supabase = Supabase.instance.client;
       final currentUser = supabase.auth.currentUser;
 
@@ -244,20 +252,33 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
               }
             },
           ),
-          
+          const Divider(color: Colors.white12, height: 1),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'CONFIGURACIÓN',
+                style: TextStyle(color: Colors.white38, fontSize: 12, letterSpacing: 1.2),
+              ),
+            ),
+          ),
+          const WeightUnitSwitchTile(),
+
           const Spacer(), // Empuja el botón de cerrar sesión hacia abajo
           const Divider(color: Colors.white12, height: 1),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.redAccent),
             title: const Text('Cerrar sesión', style: TextStyle(color: Colors.redAccent, fontSize: 16)),
             onTap: () async {
+              final units = context.read<WeightUnitController>();
               await Supabase.instance.client.auth.signOut();
-              if (mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (context) => const LoginScreen()),
-                  (route) => false,
-                );
-              }
+              if (!mounted) return;
+              units.reset();
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+                (route) => false,
+              );
             },
           ),
           const SizedBox(height: 20),
@@ -268,6 +289,7 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
 
   @override
   Widget build(BuildContext context) {
+    final units = context.watch<WeightUnitController>();
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -315,7 +337,7 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
                             padding: const EdgeInsets.all(16),
                             itemCount: _misAtletas.length,
                             itemBuilder: (context, index) {
-                              return _buildMiAtletaCard(_misAtletas[index]);
+                              return _buildMiAtletaCard(_misAtletas[index], units);
                             },
                           ),
                   ),
@@ -341,7 +363,7 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
                             padding: const EdgeInsets.all(16),
                             itemCount: _atletasDisponibles.length,
                             itemBuilder: (context, index) {
-                              return _buildAtletaDisponibleCard(_atletasDisponibles[index]);
+                              return _buildAtletaDisponibleCard(_atletasDisponibles[index], units);
                             },
                           ),
                   ),
@@ -352,7 +374,7 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
   }
 
   // Tarjeta para los atletas que YA SON del Coach
-  Widget _buildMiAtletaCard(Map<String, dynamic> atleta) {
+  Widget _buildMiAtletaCard(Map<String, dynamic> atleta, WeightUnitController units) {
     return Card(
       color: const Color(0xFF2C2C2C),
       margin: const EdgeInsets.only(bottom: 16.0),
@@ -391,7 +413,7 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Peso: ${atleta['weight']} kg | Sexo: ${atleta['gender']}',
+                          'Peso: ${units.formatStored(atleta['weight'])} | Sexo: ${atleta['gender']}',
                           style: const TextStyle(color: Colors.white54, fontSize: 13),
                         ),
                       ],
@@ -416,9 +438,9 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _buildStatBadge('SQ', '${atleta['max_squat'].toStringAsFixed(1)} kg'),
-                        _buildStatBadge('BP', '${atleta['max_bench'].toStringAsFixed(1)} kg'),
-                        _buildStatBadge('DL', '${atleta['max_deadlift'].toStringAsFixed(1)} kg'),
+                        _buildStatBadge('SQ', units.format(atleta['max_squat'])),
+                        _buildStatBadge('BP', units.format(atleta['max_bench'])),
+                        _buildStatBadge('DL', units.format(atleta['max_deadlift'])),
                       ],
                     ),
                   ),
@@ -434,7 +456,7 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
                       children: [
                         const Text('TOTAL', style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
                         Text(
-                          '${atleta['total'].toStringAsFixed(0)} kg',
+                          units.format(atleta['total']),
                           style: const TextStyle(color: Colors.redAccent, fontSize: 14, fontWeight: FontWeight.bold),
                         ),
                       ],
@@ -450,7 +472,7 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
   }
 
   // Tarjeta para los atletas disponibles (con botón de agregar)
-  Widget _buildAtletaDisponibleCard(Map<String, dynamic> atleta) {
+  Widget _buildAtletaDisponibleCard(Map<String, dynamic> atleta, WeightUnitController units) {
     return Card(
       color: const Color(0xFF252525),
       margin: const EdgeInsets.only(bottom: 12.0),
@@ -466,7 +488,7 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          'Peso: ${atleta['weight']?.toString() ?? '--'} kg',
+          'Peso: ${atleta['weight'] == null ? '--' : units.formatStored(atleta['weight'])}',
           style: const TextStyle(color: Colors.white54),
         ),
         trailing: ElevatedButton.icon(
@@ -487,7 +509,10 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
       children: [
         Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold)),
         const SizedBox(height: 2),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+        ),
       ],
     );
   }
