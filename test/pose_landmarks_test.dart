@@ -56,6 +56,32 @@ void main() {
 
       expect(analysis.hasRequiredLandmarks, isTrue);
       expect(analysis.primaryAngle, closeTo(90, 0.1));
+      expect(analysis.torsoLean, isNull);
+      expect(analysis.hipAngle, isNull);
+      expect(analysis.oppositeKneeAngle, isNull);
+    });
+
+    test('sentadilla mide torso y cadera si el hombro es visible, y la otra rodilla solo con confianza', () {
+      final analysis = PoseMathUtils.analizarPoseParaEjercicio(
+        Pose(
+          landmarks: {
+            PoseLandmarkType.rightShoulder: punto(PoseLandmarkType.rightShoulder, 10, -10, 0.9),
+            PoseLandmarkType.rightHip: punto(PoseLandmarkType.rightHip, 0, 0, 0.9),
+            PoseLandmarkType.rightKnee: punto(PoseLandmarkType.rightKnee, 0, 10, 0.9),
+            PoseLandmarkType.rightAnkle: punto(PoseLandmarkType.rightAnkle, 10, 10, 0.9),
+            PoseLandmarkType.leftHip: punto(PoseLandmarkType.leftHip, 5, 0, 0.9),
+            PoseLandmarkType.leftKnee: punto(PoseLandmarkType.leftKnee, 5, 10, 0.9),
+            PoseLandmarkType.leftAnkle: punto(PoseLandmarkType.leftAnkle, 15, 10, 0.9),
+          },
+        ),
+        'sentadilla',
+        ladoBloqueado: PoseSide.right,
+      );
+
+      expect(analysis.primaryAngle, closeTo(90, 0.1));
+      expect(analysis.torsoLean, closeTo(45, 0.1));
+      expect(analysis.hipAngle, closeTo(135, 0.1));
+      expect(analysis.oppositeKneeAngle, closeTo(90, 0.1));
     });
 
     test('banca no mide si la muñeca es dudosa', () {

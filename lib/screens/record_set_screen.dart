@@ -6,6 +6,7 @@ import '../config/s3_config.dart';
 import '../services/s3_video_service.dart';
 import '../services/weight_unit_controller.dart';
 import '../utils/one_rep_max.dart';
+import '../utils/set_summary.dart';
 import 'ai_coach/pose_detector_view.dart';
 
 class RecordSetScreen extends StatefulWidget {
@@ -231,6 +232,22 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                 '• Técnica: ${_aiMetrics!['technique_evaluation'] ?? 'Verificada'}',
                 style: const TextStyle(color: Colors.white60, fontSize: 11),
               ),
+              ...SetSummary.describir(_aiMetrics!['repetitions'] as List?).map(
+                (linea) => Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(linea, style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                ),
+              ),
+              if (SetSummary.lineaResumen(
+                    _aiMetrics!['set_summary'] is Map
+                        ? Map<String, dynamic>.from(_aiMetrics!['set_summary'] as Map)
+                        : null,
+                  )
+                  case final resumen?)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(resumen, style: const TextStyle(color: Colors.cyanAccent, fontSize: 12)),
+                ),
             ],
           ],
         ),
@@ -670,6 +687,28 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
                                   ),
                                 ],
                               ),
+                              const SizedBox(height: 6),
+                              ...SetSummary.describir(_aiMetrics!['repetitions'] as List?, max: 4).map(
+                                (linea) => Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(linea, style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                                  ),
+                                ),
+                              ),
+                              if (SetSummary.lineaResumen(
+                                    _aiMetrics!['set_summary'] is Map
+                                        ? Map<String, dynamic>.from(_aiMetrics!['set_summary'] as Map)
+                                        : null,
+                                  )
+                                  case final resumen?) ...[
+                                const SizedBox(height: 6),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(resumen, style: const TextStyle(color: Colors.cyanAccent, fontSize: 12)),
+                                ),
+                              ],
                               const SizedBox(height: 6),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

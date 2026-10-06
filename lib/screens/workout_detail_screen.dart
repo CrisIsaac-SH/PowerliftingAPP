@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/s3_video_service.dart';
 import '../services/weight_unit_controller.dart';
+import '../utils/set_summary.dart';
 import '../utils/weight_units.dart';
 import 'set_video_player_screen.dart';
 
@@ -116,7 +117,14 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        return Padding(
+        final repeticiones = metrics?['repetitions'];
+        final resumen = SetSummary.lineaResumen(
+          metrics?['set_summary'] is Map
+              ? Map<String, dynamic>.from(metrics!['set_summary'] as Map)
+              : null,
+        );
+        return SingleChildScrollView(
+          child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -148,6 +156,17 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   'IA Coach: ${metrics['reps_detected'] ?? 0} reps · ${metrics['technique_evaluation'] ?? 'Análisis guardado'}',
                   style: const TextStyle(color: Colors.greenAccent, fontSize: 13),
                 ),
+                ...SetSummary.describir(repeticiones is List ? repeticiones : null).map(
+                  (linea) => Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(linea, style: const TextStyle(color: Colors.white60, fontSize: 13)),
+                  ),
+                ),
+                if (resumen != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(resumen, style: const TextStyle(color: Colors.cyanAccent, fontSize: 13)),
+                  ),
               ],
               const SizedBox(height: 18),
               if (videoUrl != null && videoUrl.isNotEmpty)
@@ -169,6 +188,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   style: TextStyle(color: Colors.white38),
                 ),
             ],
+          ),
           ),
         );
       },

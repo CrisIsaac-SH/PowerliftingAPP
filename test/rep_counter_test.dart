@@ -64,6 +64,11 @@ void main() {
       expect(counter.reps, 1);
       expect(counter.validReps, 1);
       expect(counter.inRep, isFalse);
+      expect(counter.completed, hasLength(1));
+      expect(counter.completed.single.valid, isTrue);
+      expect(counter.completed.single.invalidReason, isNull);
+      expect(counter.completed.single.minAngle, 75);
+      expect(counter.completed.single.durationMs, 1100);
     });
 
     test('cuenta la repetición pero no la marca válida si no llega al fondo', () {
@@ -76,6 +81,9 @@ void main() {
 
       expect(counter.reps, 1);
       expect(counter.validReps, 0);
+      expect(counter.completed.single.valid, isFalse);
+      expect(counter.completed.single.invalidReason, 'depth');
+      expect(counter.completed.single.minAngle, 100);
     });
 
     test('descarta un movimiento más corto que 900 ms', () {
@@ -90,6 +98,7 @@ void main() {
       expect(counter.reps, 0);
       expect(counter.validReps, 0);
       expect(counter.inRep, isFalse);
+      expect(counter.completed, isEmpty);
     });
 
     test('no cierra la repetición si no vuelve al bloqueo', () {
@@ -158,6 +167,9 @@ void main() {
 
       expect(counter.reps, 1);
       expect(counter.validReps, 1);
+      expect(counter.completed.single.maxAngle, 170);
+      expect(counter.completed.single.valid, isTrue);
+      expect(counter.completed.single.kneeAngle, isNull);
     });
 
     test('no cuenta si nunca hubo bloqueo', () {
@@ -191,6 +203,7 @@ void main() {
 
       expect(counter.reps, 0);
       expect(counter.validReps, 0);
+      expect(counter.completed, isEmpty);
       expect(counter.inRep, isFalse);
     });
   });
@@ -230,6 +243,7 @@ void main() {
 
       expect(counter.reps, 0);
       expect(counter.validReps, 0);
+      expect(counter.completed, isEmpty);
     });
 
     test('una sentadilla que no cierra en 6 s se descarta', () {
@@ -262,6 +276,98 @@ void main() {
 
       expect(counter.reps, 1);
       expect(counter.validReps, 1);
+    });
+  });
+
+  group('RepCounter detalle por repetición', () {
+    test('guarda el torso y la cadera del frame más profundo', () {
+      final counter = RepCounter();
+      counter.update(lift: LiftType.squat, angle: 170, isValidForm: false, timeMs: 0);
+      counter.update(lift: LiftType.squat, angle: 170, isValidForm: false, timeMs: 500);
+      counter.update(
+        lift: LiftType.squat,
+        angle: 110,
+        isValidForm: false,
+        timeMs: 700,
+        torsoAngle: 8,
+        hipAngle: 70,
+        side: 'left',
+      );
+      counter.update(
+        lift: LiftType.squat,
+        angle: 80,
+        isValidForm: true,
+        timeMs: 900,
+        torsoAngle: 18,
+        hipAngle: 55,
+        side: 'left',
+      );
+      counter.update(
+        lift: LiftType.squat,
+        angle: 74,
+        isValidForm: true,
+        timeMs: 1050,
+        torsoAngle: 22,
+        hipAngle: 48,
+        oppositeKneeAngle: 76,
+        side: 'left',
+      );
+      counter.update(
+        lift: LiftType.squat,
+        angle: 160,
+        isValidForm: false,
+        timeMs: 1800,
+        torsoAngle: 6,
+        hipAngle: 160,
+        side: 'left',
+      );
+
+      final rep = counter.completed.single;
+      expect(rep.minAngle, 74);
+      expect(rep.torsoAngle, 22);
+      expect(rep.hipAngle, 48);
+      expect(rep.oppositeKneeAngle, 76);
+      expect(rep.side, 'left');
+      expect(rep.kneeAngle, isNull);
+      expect(rep.toJson().containsKey('invalid_reason'), isFalse);
+      expect(rep.toJson()['torso_angle'], 22);
+    });
+
+    test('el peso muerto guarda la rodilla del frame de mayor bloqueo', () {
+      final counter = RepCounter();
+      counter.update(lift: LiftType.deadlift, angle: 90, isValidForm: false, timeMs: 0);
+      counter.update(lift: LiftType.deadlift, angle: 90, isValidForm: false, timeMs: 500);
+      counter.update(
+        lift: LiftType.deadlift,
+        angle: 150,
+        isValidForm: false,
+        timeMs: 900,
+        secondaryAngle: 140,
+        side: 'right',
+      );
+      counter.update(
+        lift: LiftType.deadlift,
+        angle: 170,
+        isValidForm: true,
+        timeMs: 1200,
+        secondaryAngle: 168,
+        side: 'right',
+      );
+      counter.update(
+        lift: LiftType.deadlift,
+        angle: 100,
+        isValidForm: false,
+        timeMs: 2000,
+        secondaryAngle: 110,
+        side: 'right',
+      );
+
+      final rep = counter.completed.single;
+      expect(rep.valid, isTrue);
+      expect(rep.maxAngle, 170);
+      expect(rep.kneeAngle, 168);
+      expect(rep.torsoAngle, isNull);
+      expect(rep.toJson()['knee_angle'], 168);
     });
   });
 

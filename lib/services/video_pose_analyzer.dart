@@ -35,7 +35,10 @@ class PosePlaybackFrame {
 class VideoPoseAnalyzer {
   VideoPoseAnalyzer._();
 
-  static Future<File> ensureLocalVideo(String playbackUrl, {bool Function()? isCancelled}) async {
+  static Future<File> ensureLocalVideo(
+    String playbackUrl, {
+    bool Function()? isCancelled,
+  }) async {
     final dir = await getTemporaryDirectory();
     final cacheDir = Directory('${dir.path}/set_videos');
     if (!await cacheDir.exists()) {
@@ -57,7 +60,9 @@ class VideoPoseAnalyzer {
         throw StateError('cancelado');
       }
       if (response.statusCode >= 400) {
-        throw HttpException('No se pudo descargar el video (${response.statusCode})');
+        throw HttpException(
+          'No se pudo descargar el video (${response.statusCode})',
+        );
       }
       final sink = file.openWrite();
       await response.pipe(sink);
@@ -91,7 +96,9 @@ class VideoPoseAnalyzer {
     PoseSide? lockedSide;
     final trajectory = <Offset>[];
 
-    final totalMs = duration.inMilliseconds <= 0 ? 1000 : duration.inMilliseconds;
+    final totalMs = duration.inMilliseconds <= 0
+        ? 1000
+        : duration.inMilliseconds;
     final intervalMs = totalMs > 24000 ? 200 : 140;
     final steps = (totalMs / intervalMs).ceil().clamp(1, 180);
 
@@ -137,7 +144,9 @@ class VideoPoseAnalyzer {
 
         List<Pose> poses = const [];
         try {
-          poses = await detector.processImage(InputImage.fromFilePath(frameFile.path));
+          poses = await detector.processImage(
+            InputImage.fromFilePath(frameFile.path),
+          );
         } catch (e) {
           debugPrint('Error al analizar frame $timeMs: $e');
         } finally {
@@ -159,16 +168,24 @@ class VideoPoseAnalyzer {
           if (analysis.hasRequiredLandmarks) {
             if (angleGate.accept(analysis.primaryAngle, timeMs)) {
               lockedSide ??= analysis.side;
+              final lift = LiftThresholds.fromName(exercise);
               counter.update(
-                lift: LiftThresholds.fromName(exercise),
+                lift: lift,
                 angle: analysis.primaryAngle,
                 isValidForm: analysis.isValidForm,
                 timeMs: timeMs,
+                secondaryAngle: lift == LiftType.deadlift ? analysis.secondaryAngle : null,
+                torsoAngle: analysis.torsoLean,
+                hipAngle: analysis.hipAngle,
+                oppositeKneeAngle: analysis.oppositeKneeAngle,
+                side: analysis.side.name,
               );
               final track = analysis.trackingLandmark;
-              if (track != null && track.likelihood >= LiftThresholds.minLandmarkConfidence) {
+              if (track != null &&
+                  track.likelihood >= LiftThresholds.minLandmarkConfidence) {
                 final point = Offset(track.x, track.y);
-                if (trajectory.isEmpty || (trajectory.last - point).distance >= 6) {
+                if (trajectory.isEmpty ||
+                    (trajectory.last - point).distance >= 6) {
                   trajectory.add(point);
                   if (trajectory.length > 40) trajectory.removeAt(0);
                 }

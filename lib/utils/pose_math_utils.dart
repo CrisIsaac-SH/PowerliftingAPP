@@ -15,6 +15,15 @@ class ExercisePoseAnalysis {
   final double confidence;
   final bool hasRequiredLandmarks;
 
+  /// Grados respecto a la vertical. Solo sentadilla, y solo si el hombro es visible.
+  final double? torsoLean;
+
+  /// Ángulo hombro–cadera–rodilla del lado analizado. Solo sentadilla con hombro visible.
+  final double? hipAngle;
+
+  /// Rodilla del otro lado, si cadera, rodilla y tobillo pasan el umbral de confianza.
+  final double? oppositeKneeAngle;
+
   ExercisePoseAnalysis({
     required this.side,
     required this.primaryAngle,
@@ -24,6 +33,9 @@ class ExercisePoseAnalysis {
     this.trackingLandmark,
     required this.confidence,
     required this.hasRequiredLandmarks,
+    this.torsoLean,
+    this.hipAngle,
+    this.oppositeKneeAngle,
   });
 }
 
@@ -133,6 +145,25 @@ class PoseMathUtils {
     return total / points.length;
   }
 
+  /// Ángulo entre el torso (cadera → hombro) y la vertical. 0 es totalmente erguido.
+  static double inclinacionTorso(PoseLandmark shoulder, PoseLandmark hip) {
+    final dx = shoulder.x - hip.x;
+    final dy = shoulder.y - hip.y;
+    final radians = math.atan2(dx.abs(), -dy);
+    var degrees = radians * (180 / math.pi);
+    if (degrees < 0) degrees = 0;
+    if (degrees > 180) degrees = 180;
+    return degrees;
+  }
+
+  static double? _anguloRodillaSiVisible(Pose pose, bool isRight) {
+    final hip = pose.landmarks[isRight ? PoseLandmarkType.rightHip : PoseLandmarkType.leftHip];
+    final knee = pose.landmarks[isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee];
+    final ankle = pose.landmarks[isRight ? PoseLandmarkType.rightAnkle : PoseLandmarkType.leftAnkle];
+    if (!_cadenaVisible([hip, knee, ankle])) return null;
+    return calcularAngulo(hip!, knee!, ankle!);
+  }
+
   static ExercisePoseAnalysis _analizarSquat(Pose pose, PoseSide side) {
     final isRight = side == PoseSide.right;
     final hip = pose.landmarks[isRight ? PoseLandmarkType.rightHip : PoseLandmarkType.leftHip];
@@ -156,6 +187,17 @@ class PoseMathUtils {
 
     final anguloRodilla = calcularAngulo(hip!, knee!, ankle!);
     final isDeep = esSentadillaProfunda(anguloRodilla);
+    final shoulder = pose.landmarks[
+      isRight ? PoseLandmarkType.rightShoulder : PoseLandmarkType.leftShoulder
+    ];
+    double? inclinacion;
+    double? anguloCadera;
+    if (shoulder != null && shoulder.likelihood >= LiftThresholds.minLandmarkConfidence) {
+      final cadera = hip;
+      final rodilla = knee;
+      inclinacion = inclinacionTorso(shoulder, cadera);
+      anguloCadera = calcularAngulo(shoulder, cadera, rodilla);
+    }
 
     return ExercisePoseAnalysis(
       side: side,
@@ -167,8 +209,11 @@ class PoseMathUtils {
       ),
       isValidForm: isDeep,
       trackingLandmark: hip, // La cadera define la trayectoria del descenso
-      confidence: _confianzaMedia([hip!, knee!, ankle!]),
+      confidence: _confianzaMedia([hip, knee, ankle]),
       hasRequiredLandmarks: true,
+      torsoLean: inclinacion,
+      hipAngle: anguloCadera,
+      oppositeKneeAngle: _anguloRodillaSiVisible(pose, !isRight),
     );
   }
 

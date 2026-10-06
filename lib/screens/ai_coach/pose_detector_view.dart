@@ -10,6 +10,7 @@ import '../../utils/lift_rules.dart';
 import '../../utils/pose_identity_tracker.dart';
 import '../../utils/pose_math_utils.dart';
 import '../../utils/rep_counter.dart';
+import '../../utils/set_summary.dart';
 
 class PoseDetectorView extends StatefulWidget {
   final String exercise;
@@ -398,6 +399,9 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
           trackingLandmark: analisisCrudo.trackingLandmark,
           confidence: analisisCrudo.confidence,
           hasRequiredLandmarks: analisisCrudo.hasRequiredLandmarks,
+          torsoLean: analisisCrudo.torsoLean,
+          hipAngle: analisisCrudo.hipAngle,
+          oppositeKneeAngle: analisisCrudo.oppositeKneeAngle,
         );
 
         _cuerpoDetectado = analisis.hasRequiredLandmarks;
@@ -510,6 +514,11 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       angle: analisis.primaryAngle,
       isValidForm: analisis.isValidForm,
       timeMs: DateTime.now().millisecondsSinceEpoch,
+      secondaryAngle: lift == LiftType.deadlift ? analisis.secondaryAngle : null,
+      torsoAngle: analisis.torsoLean,
+      hipAngle: analisis.hipAngle,
+      oppositeKneeAngle: analisis.oppositeKneeAngle,
+      side: analisis.side.name,
     );
     _repsContadas = _repCounter.reps;
     _repsValidas = _repCounter.validReps;
@@ -564,6 +573,13 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
     }
   }
 
+  double _anguloParaGuardar() {
+    final lift = LiftThresholds.fromName(widget.exercise);
+    final desdeReps = SetSummary.bestAngle(lift, _repCounter.completed);
+    if (desdeReps != null) return desdeReps;
+    return _mejorAngulo == 999.0 ? _anguloActual : _mejorAngulo;
+  }
+
   String _obtenerCalificacionTecnica() {
     if (_repsContadas == 0) return 'Sin repeticiones completadas';
     final porcentaje = (_repsValidas / _repsContadas) * 100;
@@ -575,7 +591,12 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
   // --- MODAL DE PREVIEW DEL EJERCICIO ANTES DE GUARDAR ---
   void _mostrarPreviewModal() {
     final puntosCopia = List<Offset>.from(_trajectoryPoints);
-    final mejorAnguloFinal = _mejorAngulo == 999.0 ? _anguloActual : _mejorAngulo;
+    final mejorAnguloFinal = _anguloParaGuardar();
+    final resumenSet = SetSummary.fromReps(
+      LiftThresholds.fromName(widget.exercise),
+      _repCounter.completed,
+    );
+    final lineaResumen = SetSummary.lineaResumen(resumenSet);
 
     showModalBottomSheet(
       context: context,
@@ -733,6 +754,13 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
                   ],
                 ),
               ),
+              if (lineaResumen != null && _repCounter.completed.length > 1) ...[
+                const SizedBox(height: 10),
+                Text(
+                  lineaResumen,
+                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+              ],
               const SizedBox(height: 20),
 
               // Botones de acción del Modal
@@ -811,17 +839,23 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
     final videoPath = await _detenerGrabacionYObtenerRuta();
     if (!mounted) return;
 
+    final lift = LiftThresholds.fromName(widget.exercise);
+    final repeticiones = _repCounter.completed;
+    final resumen = SetSummary.fromReps(lift, repeticiones);
+
     Navigator.pop(context, {
       'ai_metrics': {
         'exercise': widget.exercise,
-        'reps_detected': _repsContadas,
-        'valid_reps': _repsValidas,
+        'reps_detected': repeticiones.length,
+        'valid_reps': repeticiones.where((rep) => rep.valid).length,
         'best_angle': mejorAnguloFinal,
         'body_detected': _cuerpoDetectado,
         'technique_evaluation': _obtenerCalificacionTecnica(),
         'trajectory_points': puntos.map((p) => {'x': p.dx, 'y': p.dy}).toList(),
         'is_locked': _isLocked,
         'timestamp': DateTime.now().toIso8601String(),
+        'repetitions': repeticiones.map((rep) => rep.toJson()).toList(),
+        'set_summary': ?resumen,
       },
       'video_path': ?videoPath,
     });
