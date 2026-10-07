@@ -99,6 +99,39 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     );
   }
 
+  List<Widget> _lineasFeedback(Map<String, dynamic>? analysis) {
+    if (analysis == null) return const [];
+    final bloques = <Widget>[];
+
+    void agregar(String titulo, Object? valor) {
+      if (valor is! String || valor.trim().isEmpty) return;
+      bloques.add(const SizedBox(height: 10));
+      bloques.add(Text(titulo, style: const TextStyle(color: Colors.white54, fontSize: 11, letterSpacing: 0.6)));
+      bloques.add(const SizedBox(height: 2));
+      bloques.add(Text(valor, style: const TextStyle(color: Colors.white70, fontSize: 13)));
+    }
+
+    void agregarLista(String titulo, Object? valor) {
+      if (valor is! List || valor.isEmpty) return;
+      final lineas = valor.whereType<String>().where((linea) => linea.trim().isNotEmpty).toList();
+      if (lineas.isEmpty) return;
+      bloques.add(const SizedBox(height: 10));
+      bloques.add(Text(titulo, style: const TextStyle(color: Colors.white54, fontSize: 11, letterSpacing: 0.6)));
+      for (final linea in lineas) {
+        bloques.add(Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text('• $linea', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+        ));
+      }
+    }
+
+    agregar('FEEDBACK', analysis['summary']);
+    agregarLista('LO QUE SALIÓ BIEN', analysis['strengths']);
+    agregarLista('QUÉ CUIDAR', analysis['issues']);
+    agregarLista('RECOMENDACIÓN', analysis['recommendations']);
+    return bloques;
+  }
+
   void _showSetDetail(Map<String, dynamic> setItem) {
     final units = context.read<WeightUnitController>();
     final exerciseName = setItem['exercises']?['name'] ?? 'Ejercicio';
@@ -167,6 +200,11 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(resumen, style: const TextStyle(color: Colors.cyanAccent, fontSize: 13)),
                   ),
+                ..._lineasFeedback(
+                  metrics['openai_analysis'] is Map
+                      ? Map<String, dynamic>.from(metrics['openai_analysis'] as Map)
+                      : null,
+                ),
               ],
               const SizedBox(height: 18),
               if (videoUrl != null && videoUrl.isNotEmpty)

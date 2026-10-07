@@ -324,7 +324,7 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
         }
 
         // 2. Inserción de la serie con URL de video y métricas de IA
-        await supabase.from('sets').insert({
+        final fila = await supabase.from('sets').insert({
           'workout_id': workoutId,
           'exercise_id': _selectedExerciseId,
           'weight': units.toKg(peso),
@@ -332,11 +332,36 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
           ...?((rpe != null) ? {'rpe': rpe} : null),
           ...?((videoUrl != null) ? {'video_url': videoUrl} : null),
           ...?((_aiMetrics != null) ? {'ai_metrics': _aiMetrics} : null),
-        });
+        }).select('id').single();
+
+        final repeticiones = _aiMetrics?['repetitions'];
+        final puedeAnalizar = repeticiones is List &&
+            repeticiones.isNotEmpty &&
+            _aiMetrics?['set_summary'] is Map;
+        var feedbackListo = false;
+        if (puedeAnalizar) {
+          try {
+            await supabase.functions.invoke(
+              'analyze-set',
+              body: {'set_id': fila['id']},
+            );
+            feedbackListo = true;
+          } catch (e) {
+            debugPrint('analyze-set: $e');
+          }
+        }
 
         if (mounted) {
+          final mensaje = !puedeAnalizar
+              ? '¡Serie y análisis guardados con éxito!'
+              : feedbackListo
+                  ? 'Serie guardada. El feedback quedó en el detalle del entrenamiento.'
+                  : 'Serie guardada. El feedback no se pudo generar.';
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('¡Serie y análisis guardados con éxito!'), backgroundColor: Colors.green),
+            SnackBar(
+              content: Text(mensaje),
+              backgroundColor: feedbackListo || !puedeAnalizar ? Colors.green : Colors.orange,
+            ),
           );
           _pesoController.clear();
           _repsController.clear();
