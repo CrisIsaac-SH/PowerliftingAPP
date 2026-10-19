@@ -287,6 +287,7 @@ class PoseMathUtils {
     final anguloRodilla = calcularAngulo(hipPoint, kneePoint, anklePoint);
     final anguloCadera = calcularAngulo(shoulderPoint, hipPoint, kneePoint);
     final isLockout = esBloqueoPesoMuerto(anguloCadera, anguloRodilla);
+    final inclinacion = inclinacionTorso(shoulderPoint, hipPoint);
 
     return ExercisePoseAnalysis(
       side: side,
@@ -304,6 +305,102 @@ class PoseMathUtils {
           : hip,
       confidence: _confianzaMedia([shoulderPoint, hipPoint, kneePoint, anklePoint]),
       hasRequiredLandmarks: true,
+      torsoLean: inclinacion,
     );
   }
+
+  static double _distancia(PoseLandmark a, PoseLandmark b) {
+    final dx = a.x - b.x;
+    final dy = a.y - b.y;
+    return math.sqrt(dx * dx + dy * dy);
+  }
+
+  /// Cuánto se adelanta la rodilla respecto al pie, en fracción de la espinilla.
+  ///
+  /// Positivo significa que la rodilla está más adelante que la referencia.
+  /// En vista frontal el avance no se puede leer y el resultado es nulo.
+  static KneeAdvance? avanceRodilla(Pose pose, PoseSide side) {
+    final isRight = side == PoseSide.right;
+    final hip = pose.landmarks[isRight ? PoseLandmarkType.rightHip : PoseLandmarkType.leftHip];
+    final knee = pose.landmarks[isRight ? PoseLandmarkType.rightKnee : PoseLandmarkType.leftKnee];
+    final ankle = pose.landmarks[isRight ? PoseLandmarkType.rightAnkle : PoseLandmarkType.leftAnkle];
+    if (!_cadenaVisible([hip, knee, ankle])) return null;
+
+    final shin = _distancia(knee!, ankle!);
+    if (shin < 8) return null;
+
+    final ankleDx = ankle.x - hip!.x;
+    if (ankleDx.abs() / shin < 0.35) return null;
+
+    final toe = pose.landmarks[
+      isRight ? PoseLandmarkType.rightFootIndex : PoseLandmarkType.leftFootIndex
+    ];
+    final toeOk = toe != null &&
+        toe.likelihood >= LiftThresholds.minLandmarkConfidence &&
+        (toe.x - hip.x).sign == ankleDx.sign &&
+        (toe.x - hip.x).abs() > 4;
+    final refX = toeOk ? toe.x : ankle.x;
+    final ahead = (knee.x - refX) * ankleDx.sign;
+    return KneeAdvance(ratio: ahead / shin, measuredFromToes: toeOk);
+  }
+
+  /// Colapso de la rodilla hacia el centro, en fracción del ancho de cadera.
+  ///
+  /// En perfil las caderas se superponen y la medida no aplica.
+  static double? valgoRodillas(Pose pose) {
+    final lHip = pose.landmarks[PoseLandmarkType.leftHip];
+    final rHip = pose.landmarks[PoseLandmarkType.rightHip];
+    final lKnee = pose.landmarks[PoseLandmarkType.leftKnee];
+    final rKnee = pose.landmarks[PoseLandmarkType.rightKnee];
+    final lAnkle = pose.landmarks[PoseLandmarkType.leftAnkle];
+    final rAnkle = pose.landmarks[PoseLandmarkType.rightAnkle];
+    final lShoulder = pose.landmarks[PoseLandmarkType.leftShoulder];
+    final rShoulder = pose.landmarks[PoseLandmarkType.rightShoulder];
+    if (!_cadenaVisible([lHip, rHip, lKnee, rKnee, lAnkle, rAnkle, lShoulder, rShoulder])) {
+      return null;
+    }
+
+    final hipWidth = (lHip!.x - rHip!.x).abs();
+    final torsoH = (((lShoulder!.y + rShoulder!.y) / 2) - ((lHip.y + rHip.y) / 2)).abs();
+    if (torsoH < 8 || hipWidth / torsoH < 0.35) return null;
+
+    final mid = (lHip.x + rHip.x) / 2;
+    double inward(PoseLandmark knee, PoseLandmark ankle) {
+      final ankleFromMid = (ankle.x - mid).abs();
+      final kneeFromMid = (knee.x - mid).abs();
+      return (ankleFromMid - kneeFromMid) / hipWidth;
+    }
+
+    final left = inward(lKnee!, lAnkle!);
+    final right = inward(rKnee!, rAnkle!);
+    return math.max(left, right);
+  }
+
+  /// Ancho entre codos dividido entre el ancho de hombros.
+  ///
+  /// En perfil los hombros se pisan y la apertura no se mide.
+  static double? aperturaCodos(Pose pose) {
+    final lShoulder = pose.landmarks[PoseLandmarkType.leftShoulder];
+    final rShoulder = pose.landmarks[PoseLandmarkType.rightShoulder];
+    final lElbow = pose.landmarks[PoseLandmarkType.leftElbow];
+    final rElbow = pose.landmarks[PoseLandmarkType.rightElbow];
+    if (!_cadenaVisible([lShoulder, rShoulder, lElbow, rElbow])) return null;
+
+    final shoulderWidth = _distancia(lShoulder!, rShoulder!);
+    final arm = (_distancia(lShoulder, lElbow!) + _distancia(rShoulder, rElbow!)) / 2;
+    if (arm < 8 || shoulderWidth / arm < 0.45) return null;
+    return _distancia(lElbow, rElbow) / shoulderWidth;
+  }
+}
+
+/// Avance de la rodilla respecto al pie. [measuredFromToes] indica si la
+/// referencia fue la punta del pie o, si no se veía, el tobillo.
+class KneeAdvance {
+  final double ratio;
+  final bool measuredFromToes;
+
+  const KneeAdvance({
+    required this.ratio,
+    required this.measuredFromToes,
+  });
 }

@@ -53,6 +53,31 @@ class LiftThresholds {
   /// Cadera y rodilla deben llegar aquí para el bloqueo del peso muerto.
   static const double deadliftLockout = 160;
 
+  /// Rodilla por delante de la punta del pie, en fracción de la longitud de la espinilla.
+  static const double squatKneePastToe = 0.12;
+
+  /// Si el pie no se ve, la referencia es el tobillo y el margen es más amplio.
+  static const double squatKneePastAnkle = 0.42;
+
+  /// Colapso de rodilla hacia la línea media, en fracción del ancho de cadera.
+  static const double squatValgus = 0.18;
+
+  /// Inclinación del torso, en grados desde la vertical, que carga de más la lumbar.
+  static const double squatTorsoRisk = 62;
+
+  /// Diferencia entre rodillas, en grados, que indica un descenso desparejo.
+  static const double kneeAsymmetry = 22;
+
+  /// Ancho de codos dividido entre ancho de hombros. Por encima, los codos se abren.
+  static const double benchElbowFlare = 1.9;
+
+  /// Inclinación del torso en el peso muerto que se lee como espalda redondeada.
+  static const double deadliftTorsoRisk = 78;
+
+  /// Rodilla casi bloqueada mientras la cadera sigue cerrada: la cadera subió primero.
+  static const double deadliftHipShootKnee = 150;
+  static const double deadliftHipShootHip = 140;
+
   static LiftType fromName(String exercise) {
     final name = exercise.toUpperCase();
     if (name.contains('BENCH') || name.contains('BANCA')) {

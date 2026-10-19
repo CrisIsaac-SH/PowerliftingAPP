@@ -15,6 +15,7 @@ class PosePainter extends CustomPainter {
   final List<Offset> trajectoryPoints;
   final ExercisePoseAnalysis? analysis;
   final bool isLocked;
+  final bool riskyPosition;
   final Map<PoseLandmarkType, Offset>? smoothedOffsets;
 
   PosePainter({
@@ -26,6 +27,7 @@ class PosePainter extends CustomPainter {
     this.trajectoryPoints = const [],
     this.analysis,
     this.isLocked = false,
+    this.riskyPosition = false,
     this.smoothedOffsets,
   });
 
@@ -123,7 +125,7 @@ class PosePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6.5
       ..strokeCap = StrokeCap.round
-      ..color = _colorDeTono(tone);
+      ..color = riskyPosition ? Colors.redAccent : _colorDeTono(tone);
 
     for (final link in LiftVisuals.activeLinks(lift, analysis!.side)) {
       _conectar(canvas, size, pose, link.$1, link.$2, activePaint);
@@ -190,7 +192,9 @@ class PosePainter extends CustomPainter {
         TextSpan(
           text: statusText,
           style: TextStyle(
-            color: analysis!.isValidForm ? Colors.greenAccent : Colors.orangeAccent,
+            color: riskyPosition
+                ? Colors.redAccent
+                : (analysis!.isValidForm ? Colors.greenAccent : Colors.orangeAccent),
             fontSize: 11,
             fontWeight: FontWeight.w600,
           ),
@@ -213,9 +217,11 @@ class PosePainter extends CustomPainter {
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2
-      ..color = analysis!.isValidForm
-          ? Colors.greenAccent
-          : (isLocked ? Colors.cyanAccent : Colors.white24);
+      ..color = riskyPosition
+          ? Colors.redAccent
+          : (analysis!.isValidForm
+              ? Colors.greenAccent
+              : (isLocked ? Colors.cyanAccent : Colors.white24));
 
     canvas.drawRRect(bgRect, bgPaint);
     canvas.drawRRect(bgRect, borderPaint);

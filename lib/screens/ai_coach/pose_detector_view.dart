@@ -6,6 +6,7 @@ import 'package:camera/camera.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'pose_painter.dart';
 import '../../utils/angle_sample_gate.dart';
+import '../../utils/form_safety.dart';
 import '../../utils/lift_rules.dart';
 import '../../utils/pose_identity_tracker.dart';
 import '../../utils/pose_math_utils.dart';
@@ -54,12 +55,16 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
 
   // Contador de repeticiones y biomecánica
   final RepCounter _repCounter = RepCounter();
+  final RepCounter _faseRep = RepCounter();
+  final FormAlertLatch _alertaLatch = FormAlertLatch();
   final AngleSampleGate _angleGate = AngleSampleGate();
   final PoseIdentityTracker _poseTracker = PoseIdentityTracker();
   int _repsContadas = 0;
   int _repsValidas = 0;
   double _mejorAngulo = 999.0;
   double _anguloActual = 0.0;
+  bool _repIniciada = false;
+  FormAlert? _alertaPosicion;
 
   static final Map<DeviceOrientation, int> _orientations = {
     DeviceOrientation.portraitUp: 0,
@@ -455,6 +460,8 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
           _repsValidas = _repCounter.validReps;
         }
 
+        _actualizarSenalDePosicion(posePrincipal, analisis, anguloConfiable);
+
         _customPaint = CustomPaint(
           painter: PosePainter(
             poses: [posePrincipal],
@@ -465,6 +472,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
             trajectoryPoints: List.from(_trajectoryPoints),
             analysis: analisis,
             isLocked: _isLocked,
+            riskyPosition: _alertaPosicion != null,
             smoothedOffsets: Map.from(_smoothedOffsets),
           ),
           size: Size.infinite,
@@ -472,6 +480,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       } else {
         _cuerpoDetectado = false;
         _customPaint = null;
+        _cerrarFaseSinCuerpo();
         if (_grabandoActivo) {
           _repCounter.markMissing(DateTime.now().millisecondsSinceEpoch);
           _repsContadas = _repCounter.reps;
@@ -522,6 +531,60 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
     );
     _repsContadas = _repCounter.reps;
     _repsValidas = _repCounter.validReps;
+  }
+
+  /// Sigue la fase de la repetición en la previa y durante la grabación.
+  /// El aviso de lesión solo se enciende cuando esa fase ya está abierta.
+  void _actualizarSenalDePosicion(
+    Pose pose,
+    ExercisePoseAnalysis analisis,
+    bool anguloConfiable,
+  ) {
+    final ahora = DateTime.now().millisecondsSinceEpoch;
+    if (!analisis.hasRequiredLandmarks || !anguloConfiable) {
+      _faseRep.markMissing(ahora);
+    } else {
+      final lift = LiftThresholds.fromName(widget.exercise);
+      _faseRep.update(
+        lift: lift,
+        angle: analisis.primaryAngle,
+        isValidForm: analisis.isValidForm,
+        timeMs: ahora,
+        secondaryAngle: analisis.secondaryAngle,
+        torsoAngle: analisis.torsoLean,
+        hipAngle: analisis.hipAngle,
+        oppositeKneeAngle: analisis.oppositeKneeAngle,
+        side: analisis.side.name,
+      );
+    }
+
+    _repIniciada = _faseRep.inRep;
+    final lift = LiftThresholds.fromName(widget.exercise);
+    final otraRodilla = analisis.oppositeKneeAngle;
+    final alerts = FormSafety.evaluate(
+      FormReading(
+        lift: lift,
+        repStarted: _repIniciada,
+        torsoLean: analisis.torsoLean,
+        kneeTravel: PoseMathUtils.avanceRodilla(pose, analisis.side),
+        kneeValgus: PoseMathUtils.valgoRodillas(pose),
+        kneeAsymmetry: otraRodilla == null
+            ? null
+            : (analisis.primaryAngle - otraRodilla).abs(),
+        elbowFlare: PoseMathUtils.aperturaCodos(pose),
+        hipAngle: lift == LiftType.deadlift ? analisis.primaryAngle : analisis.hipAngle,
+        kneeAngle: lift == LiftType.deadlift
+            ? analisis.secondaryAngle
+            : analisis.primaryAngle,
+      ),
+    );
+    _alertaPosicion = _alertaLatch.update(alerts);
+  }
+
+  void _cerrarFaseSinCuerpo() {
+    _faseRep.markMissing(DateTime.now().millisecondsSinceEpoch);
+    _repIniciada = _faseRep.inRep;
+    _alertaPosicion = _alertaLatch.update(const []);
   }
 
   double _traducirCoordenadaX(
@@ -1164,6 +1227,8 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
             ),
           ),
 
+          if (_cuerpoDetectado) _buildIndicadorPosicion(),
+
           // 5. Panel Inferior HUD con Métricas y Botón de Preview / Guardado
           Positioned(
             bottom: 24,
@@ -1215,10 +1280,14 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
                         onPressed: () {
                           setState(() {
                             _repCounter.reset();
+                            _faseRep.reset();
+                            _alertaLatch.reset();
                             _angleGate.reset();
                             _repsContadas = 0;
                             _repsValidas = 0;
                             _mejorAngulo = 999.0;
+                            _repIniciada = false;
+                            _alertaPosicion = null;
                             _trajectoryPoints.clear();
                           });
                         },
@@ -1256,6 +1325,73 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildIndicadorPosicion() {
+    final alerta = _alertaPosicion;
+    final enRiesgo = alerta != null;
+    final color = enRiesgo
+        ? const Color(0xFFB00020)
+        : (_repIniciada ? const Color(0xFF1B5E20) : const Color(0xFF3E3E3E));
+    final titulo = enRiesgo
+        ? 'MALA POSICIÓN'
+        : (_repIniciada ? 'REPETICIÓN EN CURSO' : 'ESPERANDO LA REPETICIÓN');
+    final detalle = enRiesgo
+        ? alerta.message
+        : (_repIniciada
+            ? 'Posición estable. Sigue el recorrido.'
+            : 'El aviso de lesión aparece cuando la repetición ya empezó.');
+
+    return Positioned(
+      top: 214,
+      left: 20,
+      right: 20,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withAlpha(235),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: enRiesgo ? Colors.redAccent : Colors.white24,
+            width: enRiesgo ? 1.6 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              enRiesgo
+                  ? Icons.warning_amber_rounded
+                  : (_repIniciada ? Icons.play_circle_fill : Icons.hourglass_bottom),
+              color: Colors.white,
+              size: 26,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    titulo,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    detalle,
+                    style: const TextStyle(color: Colors.white, fontSize: 12, height: 1.25),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
