@@ -9,6 +9,9 @@ import '../utils/one_rep_max.dart';
 import '../widgets/weight_unit_switch_tile.dart';
 import 'workout_detail_screen.dart';
 import 'history_screen.dart';
+import 'community_forum_screen.dart';
+import 'leaderboard_screen.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -273,6 +276,32 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.forum_outlined, color: Colors.white),
+            title: const Text('Comunidad y Noticias', style: TextStyle(color: Colors.white, fontSize: 16)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CommunityForumScreen()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.military_tech, color: Colors.white),
+            title: const Text('Ranking Global', style: TextStyle(color: Colors.white, fontSize: 16)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const LeaderboardScreen()),
+              );
+            },
+          ),
+
+          
+          
+
           const Divider(color: Colors.white12, height: 1),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
