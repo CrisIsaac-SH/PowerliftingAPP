@@ -5,6 +5,7 @@ import '../services/weight_unit_controller.dart';
 import '../widgets/weight_unit_switch_tile.dart';
 import 'scan_athlete_qr_screen.dart';
 import 'login_screen.dart';
+import 'coach_plan_workout_screen.dart';
 
 class CoachHomeScreen extends StatefulWidget {
   const CoachHomeScreen({super.key});
@@ -385,7 +386,15 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
       ),
       child: InkWell(
         onTap: () {
-          print('Ver detalles de ${atleta['full_name']}');
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => CoachPlanWorkoutScreen(
+                athleteId: atleta['id'],
+                athleteName: atleta['full_name'],
+              ),
+            ),
+          );
         },
         splashColor: Colors.redAccent.withOpacity(0.2),
         child: Padding(
