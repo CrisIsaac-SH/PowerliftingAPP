@@ -11,6 +11,10 @@ import 'workout_detail_screen.dart';
 import 'history_screen.dart';
 import 'community_forum_screen.dart';
 import 'leaderboard_screen.dart';
+import '../services/supabase_service.dart';
+import '../models/weekly_block_model.dart';
+import '../models/weekly_block_model.dart';
+import '../screens/workout.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -295,6 +299,18 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const LeaderboardScreen()),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.fitness_center, color: Colors.white),
+            title: const Text('Mis Entrenamientos', style: TextStyle(color: Colors.white, fontSize: 16)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const WorkoutScreen()),
               );
             },
           ),
