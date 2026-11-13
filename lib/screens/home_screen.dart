@@ -2,23 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_screen.dart';
-import 'record_set_screen.dart';
 import 'athlete_qr_screen.dart';
 import '../services/weight_unit_controller.dart';
 import '../utils/one_rep_max.dart';
 import '../widgets/weight_unit_switch_tile.dart';
 import 'workout_detail_screen.dart';
 import 'history_screen.dart';
+import 'app_shell.dart';
 import 'community_forum_screen.dart';
 import 'leaderboard_screen.dart';
-import '../services/supabase_service.dart';
-import '../models/weekly_block_model.dart';
-import '../models/weekly_block_model.dart';
+import 'train_hub_screen.dart';
+import '../widgets/progress_chart_card.dart';
+import '../services/training_service.dart';
 import '../screens/workout.dart';
 
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final bool embedded;
+
+  const HomeScreen({super.key, this.embedded = false});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -37,6 +39,11 @@ class _HomeScreenState extends State<HomeScreen> {
   double _maxSquat = 0.0;
   double _maxBench = 0.0;
   double _maxDeadlift = 0.0;
+  int _sesionesSemana = 0;
+  int? _metaSesiones;
+  double _volumenSemana = 0;
+  Map<String, double> _mejorSemana = {};
+  Map<String, double> _metaPeso = {};
 
   bool _datosIniciados = false;
 
@@ -52,6 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await _obtenerDatosDelUsuario();
     _cargarMarcasPersonales();
     _obtenerHistorialGeneral();
+    _cargarSemana();
   }
 
   Future<void> _obtenerDatosDelUsuario() async {
@@ -155,75 +163,94 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _buildExerciseCard(String title, String imagePath, double maxWeight, WeightUnitController units) {
+  Future<void> _cargarSemana() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+    final service = TrainingService();
+    final start = TrainingService.mondayOf(DateTime.now());
+    final end = start.add(const Duration(days: 6));
+    try {
+      final workouts = await service.workoutsBetween(userId: userId, start: start, end: end);
+      var sesiones = 0;
+      var volumen = 0.0;
+      final mejor = <String, double>{};
+      for (final workout in workouts) {
+        if (workout['status'] == 'completed') sesiones++;
+        for (final set in List<dynamic>.from(workout['sets'] ?? [])) {
+          if (set['status'] != null && set['status'] != 'completed') continue;
+          final key = TrainingService.liftKey((set['exercises']?['name'] ?? '').toString());
+          final weight = double.tryParse(set['weight'].toString()) ?? 0;
+          final reps = int.tryParse(set['reps'].toString()) ?? 0;
+          volumen += weight * reps;
+          if (key == null) continue;
+          final rm = PowerliftingUtils.calcular1RM(weight, reps);
+          if (rm > (mejor[key] ?? 0)) mejor[key] = rm;
+        }
+      }
+      Map<String, dynamic>? goal;
+      try {
+        goal = await service.weeklyGoal(userId, DateTime.now());
+      } catch (_) {
+        goal = null;
+      }
+      final metas = <String, double>{};
+      for (final lift in List<dynamic>.from(goal?['weekly_lift_goals'] ?? [])) {
+        final key = TrainingService.liftKey((lift['exercises']?['name'] ?? '').toString());
+        final weight = (lift['target_weight_kg'] as num?)?.toDouble() ?? 0;
+        if (key != null && weight > 0) metas[key] = weight;
+      }
+      if (mounted) {
+        setState(() {
+          _sesionesSemana = sesiones;
+          _metaSesiones = (goal?['target_sessions'] as num?)?.toInt();
+          _volumenSemana = volumen;
+          _mejorSemana = mejor;
+          _metaPeso = metas;
+        });
+      }
+    } catch (e) {
+      debugPrint('Semana: $e');
+    }
+  }
+
+  Widget _buildWeekCard(WeightUnitController units) {
+    String peso(String key) {
+      final actual = _mejorSemana[key] ?? 0;
+      final meta = _metaPeso[key];
+      final actualText = actual <= 0 ? '--' : units.format(actual);
+      if (meta == null) return actualText;
+      return '$actualText / ${units.format(meta)}';
+    }
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF2C2C2C),
-        border: Border.all(color: const Color(0xFF1E1E1E), width: 2),
-        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFF252525),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => RecordSetScreen(initialExercise: title),
-              ),
-            );
-            _obtenerHistorialGeneral();
-            _cargarMarcasPersonales();
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Row(
-              children: [
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF151010),
-                    borderRadius: BorderRadius.circular(8),
-                    image: DecorationImage(
-                      image: AssetImage(imagePath),
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 30),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 1.5,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '1RM: ${units.format(maxWeight)}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.add_circle_outline, color: Colors.white54),
-              ],
-            ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('ESTA SEMANA', style: TextStyle(color: Colors.white54, letterSpacing: 1.1)),
+          const SizedBox(height: 12),
+          Text(
+            _metaSesiones == null
+                ? '$_sesionesSemana entrenamientos'
+                : '$_sesionesSemana / $_metaSesiones entrenamientos',
+            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
           ),
-        ),
+          const SizedBox(height: 6),
+          Text('Volumen ${units.format(_volumenSemana)}', style: const TextStyle(color: Colors.white70)),
+          const SizedBox(height: 10),
+          Text('Squat ${peso('squat')}', style: const TextStyle(color: Colors.white70)),
+          Text('Bench ${peso('bench')}', style: const TextStyle(color: Colors.white70)),
+          Text('Deadlift ${peso('deadlift')}', style: const TextStyle(color: Colors.white70)),
+          if (_metaSesiones == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('Sin objetivo guardado para esta semana.', style: TextStyle(color: Colors.white38, fontSize: 12)),
+            ),
+        ],
       ),
     );
   }
@@ -363,7 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       key: _scaffoldKey, // 3. ASIGNAMOS LA LLAVE AL SCAFFOLD
       backgroundColor: backgroundColor,
-      drawer: _buildDrawer(), // 4. AGREGAMOS EL DRAWER
+      drawer: widget.embedded ? null : _buildDrawer(),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
           : Column(
@@ -398,8 +425,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         icon: const Icon(Icons.menu, color: Colors.white, size: 28),
                         tooltip: 'Abrir menú',
                         onPressed: () {
-                          // Abre el menú lateral
-                          _scaffoldKey.currentState?.openDrawer();
+                          if (widget.embedded) {
+                            ShellScope.openDrawer(context);
+                          } else {
+                            _scaffoldKey.currentState?.openDrawer();
+                          }
                         },
                       ),
                     ),
@@ -435,9 +465,31 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       children: [
-                        _buildExerciseCard('SQUAT', 'assets/squat.jpeg', _maxSquat, units),
-                        _buildExerciseCard('BENCH', 'assets/bench.jpeg', _maxBench, units),
-                        _buildExerciseCard('DEADLIFT', 'assets/deadlift.jpeg', _maxDeadlift, units),
+                        _buildWeekCard(units),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                              foregroundColor: Colors.white,
+                              textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                            ),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const TrainHubScreen()),
+                              ).then((_) => _inicializarDatos());
+                            },
+                            child: const Text('¡Entrenar!'),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ProgressChartCard(
+                          userId: Supabase.instance.client.auth.currentUser?.id ?? '',
+                          height: 220,
+                        ),
                       ],
                     ),
                   ),

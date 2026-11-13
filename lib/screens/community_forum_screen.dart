@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'app_shell.dart';
 import 'news_feed_screen.dart'; // Importamos la nueva pantalla de noticias
 
 class CommunityForumScreen extends StatefulWidget {
-  const CommunityForumScreen({super.key});
+  final bool showNewsTab;
+
+  const CommunityForumScreen({super.key, this.showNewsTab = true});
 
   @override
   State<CommunityForumScreen> createState() => _CommunityForumScreenState();
@@ -165,24 +168,28 @@ class _CommunityForumScreenState extends State<CommunityForumScreen> {
   @override
   Widget build(BuildContext context) {
     // Envolvemos el Scaffold en DefaultTabController
+    final showNews = widget.showNewsTab;
     return DefaultTabController(
-      length: 2,
+      length: showNews ? 2 : 1,
       child: Scaffold(
         backgroundColor: const Color(0xFF333333),
         appBar: AppBar(
           backgroundColor: const Color(0xFF180A0A),
           title: const Text('Comunidad', style: TextStyle(color: Colors.white)),
           iconTheme: const IconThemeData(color: Colors.white),
-          // Agregamos las pestañas
-          bottom: const TabBar(
-            indicatorColor: Colors.orangeAccent,
-            labelColor: Colors.orangeAccent,
-            unselectedLabelColor: Colors.white54,
-            tabs: [
-              Tab(text: 'Foro'),
-              Tab(text: 'Noticias'),
-            ],
-          ),
+          leading: showNews ? null : const ShellMenuButton(),
+          automaticallyImplyLeading: showNews,
+          bottom: showNews
+              ? const TabBar(
+                  indicatorColor: Colors.orangeAccent,
+                  labelColor: Colors.orangeAccent,
+                  unselectedLabelColor: Colors.white54,
+                  tabs: [
+                    Tab(text: 'Foro'),
+                    Tab(text: 'Noticias'),
+                  ],
+                )
+              : null,
         ),
         floatingActionButton: FloatingActionButton(
           backgroundColor: Colors.orangeAccent,
@@ -282,9 +289,7 @@ class _CommunityForumScreenState extends State<CommunityForumScreen> {
                 ),
               ],
             ),
-            
-            // Pestaña 2: Las noticias automatizadas
-            const NewsFeedScreen(),
+            if (showNews) const NewsFeedScreen(),
           ],
         ),
       ),

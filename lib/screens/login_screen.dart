@@ -6,8 +6,7 @@ import '../services/weight_unit_controller.dart';
 // Importamos las pantallas necesarias
 
 import 'complete_profile.dart';
-import 'home_screen.dart';
-import 'coach_home_screen.dart';
+import 'app_shell.dart';
 
 //clase principal
 class LoginScreen extends StatefulWidget {
@@ -64,9 +63,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!tienePerfilCompleto) {
       pantallaDestino = const CompleteProfile();
     } else if (isCoach) {
-      pantallaDestino = const CoachHomeScreen();
+      pantallaDestino = const AppShell(isCoach: true);
     } else {
-      pantallaDestino = const HomeScreen();
+      pantallaDestino = const AppShell(isCoach: false);
     }
 
     if (!mounted) return;
@@ -138,9 +137,9 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!tienePerfilCompleto) {
           pantallaDestino = const CompleteProfile();
         } else if (isCoach) {
-          pantallaDestino = const CoachHomeScreen();
+          pantallaDestino = const AppShell(isCoach: true);
         } else {
-          pantallaDestino = const HomeScreen();
+          pantallaDestino = const AppShell(isCoach: false);
         }
 
         //como en react se hace un navigator para cambiar la pantalla

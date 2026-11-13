@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../widgets/rm_line_chart.dart';
 import 'workout_detail_screen.dart';
 import '../services/weight_unit_controller.dart';
 import '../utils/one_rep_max.dart'; // Asegúrate de que la ruta sea correcta
@@ -47,7 +48,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       // 2. Obtener todas las series para calcular el 1RM histórico
       final setsResponse = await supabase
           .from('sets')
-          .select('weight, reps, exercises(name), workouts!inner(date, user_id)')
+          .select('weight, reps, status, exercises(name), workouts!inner(date, user_id)')
           .eq('workouts.user_id', user.id)
           .order('workouts(date)', ascending: true); // Ascendente para el gráfico (de más viejo a más nuevo)
 
@@ -55,6 +56,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       Map<String, Map<String, double>> maxRmsPerDate = {};
       
       for (var s in setsResponse) {
+        if (s['status'] != null && s['status'] != 'completed') continue;
         final date = s['workouts']['date'];
         final exerciseName = (s['exercises']?['name'] ?? '').toString().toLowerCase();
         final weight = double.tryParse(s['weight'].toString()) ?? 0.0;
@@ -208,102 +210,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     return Padding(
       padding: const EdgeInsets.all(24.0),
-      child: Column(
-        children: [
-          Text(
-            '1RM estimado (${units.suffix})',
-            style: const TextStyle(color: Colors.white54, fontSize: 13),
-          ),
-          const SizedBox(height: 12),
-          // Leyenda
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildLegendItem('Squat', Colors.redAccent),
-              _buildLegendItem('Bench', Colors.blueAccent),
-              _buildLegendItem('Deadlift', Colors.greenAccent),
-            ],
-          ),
-          const SizedBox(height: 30),
-          Expanded(
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  getDrawingHorizontalLine: (value) => FlLine(color: Colors.white12, strokeWidth: 1),
-                ),
-                titlesData: FlTitlesData(
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 30,
-                      interval: 1,
-                      getTitlesWidget: (value, meta) {
-                        if (value.toInt() >= 0 && value.toInt() < _dateLabels.length) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Text(
-                              _dateLabels[value.toInt()],
-                              style: const TextStyle(color: Colors.white54, fontSize: 10),
-                            ),
-                          );
-                        }
-                        return const Text('');
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 48,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          '${value.toInt()}',
-                          style: const TextStyle(color: Colors.white54, fontSize: 12),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                borderData: FlBorderData(show: false),
-                lineBarsData: [
-                  if (squatSpots.isNotEmpty) _buildLineChartBarData(squatSpots, Colors.redAccent),
-                  if (benchSpots.isNotEmpty) _buildLineChartBarData(benchSpots, Colors.blueAccent),
-                  if (deadliftSpots.isNotEmpty) _buildLineChartBarData(deadliftSpots, Colors.greenAccent),
-                ],
-              ),
-            ),
-          ),
-        ],
+      child: RmLineChart(
+        squatSpots: squatSpots,
+        benchSpots: benchSpots,
+        deadliftSpots: deadliftSpots,
+        dateLabels: _dateLabels,
+        unitSuffix: units.suffix,
       ),
-    );
-  }
-
-  LineChartBarData _buildLineChartBarData(List<FlSpot> spots, Color color) {
-    return LineChartBarData(
-      spots: spots,
-      isCurved: true,
-      color: color,
-      barWidth: 3,
-      isStrokeCapRound: true,
-      dotData: const FlDotData(show: true),
-      belowBarData: BarAreaData(
-        show: true,
-        color: color.withOpacity(0.1),
-      ),
-    );
-  }
-
-  Widget _buildLegendItem(String title, Color color) {
-    return Row(
-      children: [
-        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 8),
-        Text(title, style: const TextStyle(color: Colors.white)),
-      ],
     );
   }
 }

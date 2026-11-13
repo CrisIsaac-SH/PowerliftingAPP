@@ -3,12 +3,15 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/weight_unit_controller.dart';
 import '../widgets/weight_unit_switch_tile.dart';
+import 'app_shell.dart';
 import 'scan_athlete_qr_screen.dart';
 import 'login_screen.dart';
 import 'coach_plan_workout_screen.dart';
 
 class CoachHomeScreen extends StatefulWidget {
-  const CoachHomeScreen({super.key});
+  final bool embedded;
+
+  const CoachHomeScreen({super.key, this.embedded = false});
 
   @override
   State<CoachHomeScreen> createState() => _CoachHomeScreenState();
@@ -295,8 +298,9 @@ Future<void> _desvincularAtleta(dynamic idBruto, String athleteName) async {
       length: 2,
       child: Scaffold(
         backgroundColor: const Color(0xFF333333),
-        drawer: _buildDrawer(), // SE AGREGA EL SIDEBAR
+        drawer: widget.embedded ? null : _buildDrawer(),
         appBar: AppBar(
+          leading: widget.embedded ? const ShellMenuButton() : null,
           title: const Text('PANEL DE COACH', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
           backgroundColor: const Color(0xFF180A0A),
           foregroundColor: Colors.white, // Esto hace que el ícono de menú hamburguesa sea blanco

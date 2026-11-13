@@ -11,7 +11,21 @@ import 'ai_coach/pose_detector_view.dart';
 
 class RecordSetScreen extends StatefulWidget {
   final String? initialExercise;
-  const RecordSetScreen({super.key, this.initialExercise});
+  final String? setId;
+  final double? initialWeightKg;
+  final int? initialReps;
+  final double? initialRpe;
+  final bool returnAfterSave;
+
+  const RecordSetScreen({
+    super.key,
+    this.initialExercise,
+    this.setId,
+    this.initialWeightKg,
+    this.initialReps,
+    this.initialRpe,
+    this.returnAfterSave = false,
+  });
 
   @override
   State<RecordSetScreen> createState() => _RecordSetScreenState();
@@ -33,12 +47,31 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
   String? _selectedExerciseId;
   String _nombreEjercicioMostrado = '';
   bool _isLoadingExercises = true;
+  bool _prefilled = false;
 
   @override
   void initState() {
     super.initState();
     _nombreEjercicioMostrado = widget.initialExercise ?? 'SQUAT';
     _fetchExercises();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_prefilled) return;
+    _prefilled = true;
+    final units = context.read<WeightUnitController>();
+    if (widget.initialWeightKg != null && widget.initialWeightKg! > 0) {
+      _pesoController.text = units.inputText(widget.initialWeightKg!);
+    }
+    if (widget.initialReps != null) {
+      _repsController.text = widget.initialReps.toString();
+    }
+    if (widget.initialRpe != null) {
+      _rpeController.text = widget.initialRpe!.toString();
+    }
+    _actualizar1RM();
   }
 
   @override
@@ -275,27 +308,21 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
       
       if (user != null) {
         final hoy = DateTime.now().toIso8601String().split('T')[0]; 
-        String workoutId;
+        String? workoutId;
+        final updatingExisting = widget.setId != null;
 
-        final workoutExistente = await supabase
-            .from('workouts')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('date', hoy)
-            .maybeSingle();
-            
-        if (workoutExistente == null) {
+        if (!updatingExisting) {
           final nuevoWorkout = await supabase
               .from('workouts')
               .insert({
                 'user_id': user.id,
                 'date': hoy,
+                'status': 'completed',
+                'origin': 'manual',
               })
               .select('id')
               .single();
           workoutId = nuevoWorkout['id'];
-        } else {
-          workoutId = workoutExistente['id'];
         }
 
         // 1. Subida del video a AWS S3 (si existe)
@@ -323,16 +350,25 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
           }
         }
 
-        // 2. Inserción de la serie con URL de video y métricas de IA
-        final fila = await supabase.from('sets').insert({
-          'workout_id': workoutId,
+        // 2. Inserción o actualización de la serie
+        final payload = {
           'exercise_id': _selectedExerciseId,
           'weight': units.toKg(peso),
           'reps': reps,
           ...?((rpe != null) ? {'rpe': rpe} : null),
           ...?((videoUrl != null) ? {'video_url': videoUrl} : null),
           ...?((_aiMetrics != null) ? {'ai_metrics': _aiMetrics} : null),
-        }).select('id').single();
+          if (updatingExisting) ...{
+            'status': 'completed',
+            'performed_at': DateTime.now().toUtc().toIso8601String(),
+          },
+        };
+        final fila = updatingExisting
+            ? await supabase.from('sets').update(payload).eq('id', widget.setId!).select('id').single()
+            : await supabase.from('sets').insert({
+                'workout_id': workoutId,
+                ...payload,
+              }).select('id').single();
 
         final repeticiones = _aiMetrics?['repetitions'];
         final puedeAnalizar = repeticiones is List &&
@@ -363,6 +399,10 @@ class _RecordSetScreenState extends State<RecordSetScreen> {
               backgroundColor: feedbackListo || !puedeAnalizar ? Colors.green : Colors.orange,
             ),
           );
+          if (widget.returnAfterSave) {
+            Navigator.pop(context, true);
+            return;
+          }
           _pesoController.clear();
           _repsController.clear();
           _rpeController.clear();

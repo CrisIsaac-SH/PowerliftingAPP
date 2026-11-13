@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/weight_unit_controller.dart';
-import 'home_screen.dart';
-import 'coach_home_screen.dart';
+import 'app_shell.dart';
 //importaciones de pantalla y componentes
 
 class CompleteProfile extends StatefulWidget {
@@ -104,7 +103,7 @@ class _CompleteProfileState extends State<CompleteProfile> {
             const SnackBar(content: Text('¡Perfil guardado con éxito!'), backgroundColor: Colors.green),
           );
         // Decidimos a qué pantalla mandarlo según lo que eligió
-        Widget siguientePantalla = _isCoach ? const CoachHomeScreen() : const HomeScreen();
+        Widget siguientePantalla = AppShell(isCoach: _isCoach);
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => siguientePantalla),
         );

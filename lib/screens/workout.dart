@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'record_set_screen.dart';
+import 'workout_composer_screen.dart';
 import 'workout_detail_screen.dart';
 
 class WorkoutScreen extends StatefulWidget {
@@ -54,7 +54,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const RecordSetScreen(),
+          builder: (_) => const WorkoutComposerScreen(),
         ),
       ).then((_) => _fetchWorkouts());
     }
@@ -62,15 +62,14 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
 
   Future<void> _iniciarWorkoutPlanificado(Map<String, dynamic> workout) async {
     await Supabase.instance.client.from('workouts').update({
-      'status': 'completed',
-      'date': DateTime.now().toIso8601String(),
+      'status': 'in_progress',
     }).eq('id', workout['id']);
 
     if (mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const RecordSetScreen(),
+          builder: (_) => WorkoutComposerScreen(workoutId: workout['id'].toString()),
         ),
       ).then((_) => _fetchWorkouts());
     }
@@ -150,7 +149,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const RecordSetScreen(),
+                    builder: (_) => WorkoutComposerScreen(workoutId: workout['id'].toString()),
                   ),
                 ).then((_) => _fetchWorkouts());
               }
