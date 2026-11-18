@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'pose_painter.dart';
+import '../../services/live_cue_sounds.dart';
 import '../../utils/angle_sample_gate.dart';
 import '../../utils/form_safety.dart';
 import '../../utils/lift_rules.dart';
+import '../../utils/live_cue_gate.dart';
 import '../../utils/pose_identity_tracker.dart';
 import '../../utils/pose_math_utils.dart';
 import '../../utils/rep_counter.dart';
@@ -65,6 +67,8 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
   double _anguloActual = 0.0;
   bool _repIniciada = false;
   FormAlert? _alertaPosicion;
+  final LiveCueGate _senales = LiveCueGate();
+  final LiveCueSounds _sonidos = LiveCueSounds();
 
   static final Map<DeviceOrientation, int> _orientations = {
     DeviceOrientation.portraitUp: 0,
@@ -76,7 +80,13 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
   @override
   void initState() {
     super.initState();
-    _iniciarCamara();
+    _abrirSesion();
+  }
+
+  Future<void> _abrirSesion() async {
+    await _sonidos.prepare();
+    if (!mounted) return;
+    await _iniciarCamara();
   }
 
   Future<void> _iniciarCamara() async {
@@ -488,6 +498,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
         }
       }
 
+      if (_canProcess) _emitirSenales();
       setState(() {});
     } catch (e) {
       debugPrint('Error en la detección: $e');
@@ -579,6 +590,24 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
       ),
     );
     _alertaPosicion = _alertaLatch.update(alerts);
+  }
+
+  /// Acierto al cerrar una repetición válida. Alerta mientras la posición
+  /// marcada en pantalla sigue siendo de riesgo.
+  void _emitirSenales() {
+    final senales = _senales.observe(
+      validReps: _repsValidas,
+      alertCode: _alertaPosicion?.code,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    for (final senal in senales) {
+      switch (senal) {
+        case LiveCue.success:
+          _sonidos.playSuccess();
+        case LiveCue.alert:
+          _sonidos.playAlert();
+      }
+    }
   }
 
   void _cerrarFaseSinCuerpo() {
@@ -934,6 +963,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
   @override
   void dispose() {
     _canProcess = false;
+    _sonidos.close();
     _poseDetector.close();
     final controller = _cameraController;
     _cameraController = null;
@@ -1282,6 +1312,7 @@ class _PoseDetectorViewState extends State<PoseDetectorView> {
                             _repCounter.reset();
                             _faseRep.reset();
                             _alertaLatch.reset();
+                            _senales.reset();
                             _angleGate.reset();
                             _repsContadas = 0;
                             _repsValidas = 0;
